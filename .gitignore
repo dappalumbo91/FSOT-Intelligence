@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+*.dll
+*.lib
+*.so
+*.obj
+*.exe
+.vscode/
+.idea/
+.DS_Store
+
+# Local checkout of the theory repository. The pinned engine is vendor/fsot_compute.py.
+fsot-2.1-lean/
+
+# Score logs and restore points. The live package is results/lattice_run.json
+# and data/engrams.json.
+apparatus/results/*.log
+apparatus/results/*.pid
+apparatus/results/lattice_run.before-*.json
+apparatus/data/engrams.before-*.json

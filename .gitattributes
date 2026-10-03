@@ -1,0 +1,5 @@
+# LF everywhere so a checkout does not move a scored file.
+* text=auto eol=lf
+*.pdf binary
+# The pin is the SHA-256 of these bytes. Do not rewrite line endings.
+vendor/fsot_compute.py -text
