@@ -25,4 +25,6 @@ jobs:
       - name: Byte-compile
         run: python -m compileall -q apparatus
       - name: Build the attend
-        run: clang -O2 -std=c11 -ffp-contract=off -fno-fast-math -fno-associative-math -shared -fPIC -o /tmp/attend_core.so apparatus/fsot_lattice/attend_core.c
+        run: clang -O2 -std=c11 -ffp-contract=off -fno-fast-math -fno-associative-math -shared -fPIC -o apparatus/fsot_lattice/attend_core.so apparatus/fsot_lattice/attend_core.c
+      - name: Verify the promoted package and the C attend
+        run: python apparatus/verify_lattice.py

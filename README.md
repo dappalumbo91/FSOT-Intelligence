@@ -9,9 +9,24 @@ The law is S = K(T1 + T2 + T3), taken from the live engine in
 (`vendor/fsot_compute.py`). Width is 60. The promoted package learned 1940 numbers:
 10 digit gauges, 10 number-word gauges, and 1920 bonds.
 
-The scored read is a consensus attend on two orthogonal carriers. The same
-gauges name closed arithmetic from a single digit through a ten-thousand name
-used as an operand. The score writeup is [apparatus/README.md](apparatus/README.md).
+The scored read is a consensus attend on two orthogonal carriers. That attend
+is C, in `apparatus/fsot_lattice/attend_core.c`. Training, the English
+spellings, the census, and the promotion gate stay Python, and they call the
+C attend for every scored row. GitHub's language share follows those Python
+lines, including the pinned engine `vendor/fsot_compute.py`. The same gauges
+name closed arithmetic from a single digit through a ten-thousand name used
+as an operand. The score writeup is [apparatus/README.md](apparatus/README.md).
+
+## Verify
+
+```powershell
+python apparatus\verify_lattice.py
+```
+
+That check re-reads the promoted package, rebuilds nothing in the gauges, and
+requires the C attend to name the same cells as the Python attend. The hub
+runner in FSOT-2.1-Lean reaches the same script through
+`scripts/verify_fsot_intelligence_lattice.py` when this folder sits beside it.
 
 ## Run
 
