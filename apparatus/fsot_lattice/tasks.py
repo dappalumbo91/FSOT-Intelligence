@@ -31,6 +31,10 @@ That ten-thousand place names the result. The spelling is a prior.
 A ten-thousand name re-enters as an operand. The ten-thousand step
 folds back up, the lower place is the one already in 0..999, and a
 name in 0..9999 is added or subtracted. The result stays inside 0..10999.
+Two ten-thousand names share one expression. The result that stays inside
+the spelled table is their difference, and that difference lands in 0..999.
+A sum that leaves 0..99999 sheds the ten-thousand step counted ten times.
+That hundred-thousand place names the result. The spelling is a prior.
 """
 
 from __future__ import annotations
@@ -59,8 +63,11 @@ RADIX = len(DIGITS)
 # One bound for the census, the thousand operand, and two thousand names.
 THOUSAND_SPAN = RADIX ** 3
 THOUSAND_CAP = RADIX ** 4
-# Spellings through ten thousand nine hundred ninety-nine. 11000 stays outside.
+# Ten-thousand answers stay inside 10000..10999. The spelling table continues.
 TEN_THOUSAND_CAP = THOUSAND_CAP + THOUSAND_SPAN
+# Spellings through one hundred nine thousand nine hundred ninety-nine.
+HUNDRED_THOUSAND = RADIX ** 5
+HUNDRED_THOUSAND_CAP = HUNDRED_THOUSAND + THOUSAND_CAP
 TEEN_WORD = {
     10: "ten",
     11: "eleven",
@@ -91,7 +98,7 @@ def number_name(n: int) -> str:
     """English spelling of a place-value count. Compounds use a hyphen."""
     span = RADIX * RADIX
     thousand = span * RADIX
-    if n < 0 or n >= TEN_THOUSAND_CAP:
+    if n < 0 or n >= HUNDRED_THOUSAND_CAP:
         return "?"
     if n < RADIX:
         return WORD_OF[n]
@@ -109,14 +116,8 @@ def number_name(n: int) -> str:
         if rest == 0:
             return stem
         return f"{stem} {number_name(rest)}"
-    if n < THOUSAND_CAP:
-        thousands, rest = divmod(n, thousand)
-        stem = f"{WORD_OF[thousands]} {THOUSAND_WORD}"
-        if rest == 0:
-            return stem
-        return f"{stem} {number_name(rest)}"
-    rest = n - THOUSAND_CAP
-    stem = f"{number_name(RADIX)} {THOUSAND_WORD}"
+    thousands, rest = divmod(n, thousand)
+    stem = f"{number_name(thousands)} {THOUSAND_WORD}"
     if rest == 0:
         return stem
     return f"{stem} {number_name(rest)}"
@@ -1516,6 +1517,274 @@ def census_ten_thousand_ops() -> dict[str, int]:
     out["min_result"] = min_result
     out["max_result"] = max_result
     print(f"ten thousand operand census {out['n']}", flush=True)
+    return out
+
+
+def ten_thousand_pair_held(left: int, right: int) -> bool:
+    """Deterministic fifth. No coefficient is a multiple of 5."""
+    return (left * 3 + right * 4) % 5 == 0
+
+
+@dataclass(frozen=True)
+class TenThousandPair:
+    """Two names in 10000..10999. The difference stays inside 0..999."""
+
+    left: int
+    right: int
+    result: int
+
+    def digit_prompt(self) -> str:
+        return f"{decimal_name(self.left)}-{decimal_name(self.right)}="
+
+    def digit_answer(self) -> str:
+        return decimal_name(self.result)
+
+    def word_prompt(self) -> str:
+        return f"what is {number_name(self.left)} minus {number_name(self.right)}"
+
+    def word_answer(self) -> str:
+        return number_name(self.result)
+
+    def is_zero(self) -> bool:
+        return self.result == 0
+
+    def borrows(self) -> bool:
+        return (self.left % RADIX) < (self.right % RADIX)
+
+    def exact_ten(self) -> bool:
+        return self.result % RADIX == 0
+
+    def exact_hundred(self) -> bool:
+        return self.result % (RADIX * RADIX) == 0
+
+    def ones(self) -> bool:
+        return self.result < RADIX
+
+    def place(self) -> bool:
+        return RADIX <= self.result < RADIX * RADIX
+
+    def block(self) -> bool:
+        return self.result >= RADIX * RADIX
+
+
+def census_ten_thousand_pairs() -> dict[str, int]:
+    """Integer scan of every ten-thousand difference. No consensus and no stored rows."""
+    print("ten thousand pair census", flush=True)
+    cap = THOUSAND_CAP
+    upper = TEN_THOUSAND_CAP
+    span = THOUSAND_SPAN
+    place = RADIX * RADIX
+    keys = (
+        "n",
+        "zero",
+        "borrow",
+        "noborrow",
+        "borrow_ten",
+        "ten",
+        "hundred",
+        "ones",
+        "place",
+        "block",
+        "low",
+        "high",
+        "righthigh",
+        "top",
+        "cross",
+        "out",
+    )
+    total = {key: 0 for key in keys}
+    hold = {key: 0 for key in keys}
+    min_result = upper
+    max_result = -1
+    held_row = False
+
+    def mark(key: str) -> None:
+        total[key] += 1
+        if held_row:
+            hold[key] += 1
+
+    def tally(result: int) -> None:
+        nonlocal min_result, max_result, held_row
+        held_row = ten_thousand_pair_held(left, right)
+        if result < min_result:
+            min_result = result
+        if result > max_result:
+            max_result = result
+        mark("n")
+        if result < 0 or result >= span:
+            mark("out")
+        if result == 0:
+            mark("zero")
+        if left_mod < right_mod:
+            mark("borrow")
+            if result % RADIX == 0:
+                mark("borrow_ten")
+        else:
+            mark("noborrow")
+        if result % RADIX == 0:
+            mark("ten")
+        if result % place == 0:
+            mark("hundred")
+        if result < RADIX:
+            mark("ones")
+        elif result < place:
+            mark("place")
+        else:
+            mark("block")
+        if low_left:
+            mark("low")
+        if high_left:
+            mark("high")
+        if high_right:
+            mark("righthigh")
+        if result >= 9 * place:
+            mark("top")
+        if left // cap != result // cap:
+            mark("cross")
+
+    for left in range(cap, upper):
+        left_mod = left % RADIX
+        low_left = left < cap + RADIX
+        high_left = left >= cap + (RADIX - 1) * place
+        for right in range(cap, left + 1):
+            right_mod = right % RADIX
+            high_right = right >= cap + (RADIX - 1) * place
+            tally(left - right)
+    out: dict[str, int] = {}
+    for key, value in total.items():
+        out[key] = value
+        out[key + "_train"] = value - hold[key]
+        out[key + "_hold"] = hold[key]
+    out["train"] = out["n_train"]
+    out["hold"] = out["n_hold"]
+    out["min_result"] = min_result
+    out["max_result"] = max_result
+    print(f"ten thousand pair census {out['n']}", flush=True)
+    return out
+
+
+def hundred_thousand_kind(right: int) -> int:
+    """0 digit, 1 place, 2 block, 3 thousand name. The coefficient on this bit is not a multiple of 5."""
+    if right < RADIX:
+        return 0
+    if right < RADIX * RADIX:
+        return 1
+    if right < THOUSAND_SPAN:
+        return 2
+    return 3
+
+
+def hundred_thousand_held(left: int, right: int, kind: int) -> bool:
+    """Deterministic fifth. No coefficient is a multiple of 5."""
+    return (left * 3 + right * 4 + 6 * kind) % 5 == 0
+
+
+@dataclass(frozen=True)
+class HundredThousandSum:
+    """An addition of a name in 90001..99999 and a name in 1..9999 whose result leaves 0..99999."""
+
+    kind: str
+    left: int
+    right: int
+    result: int
+
+    def digit_prompt(self) -> str:
+        return f"{decimal_name(self.left)}+{decimal_name(self.right)}="
+
+    def digit_answer(self) -> str:
+        return decimal_name(self.result)
+
+    def word_prompt(self) -> str:
+        right = WORD_OF[self.right] if self.right < RADIX else number_name(self.right)
+        return f"what is {number_name(self.left)} plus {right}"
+
+    def word_answer(self) -> str:
+        return number_name(self.result)
+
+
+def census_hundred_thousand_sums() -> dict[str, int]:
+    """Integer scan of sums that leave 0..99999. No consensus and no stored rows."""
+    print("hundred thousand census", flush=True)
+    span = THOUSAND_CAP
+    cap = HUNDRED_THOUSAND
+    place = RADIX * RADIX
+    block = THOUSAND_SPAN
+    keys = (
+        "n",
+        "ones",
+        "place",
+        "block",
+        "thou",
+        "ten",
+        "hundred",
+        "thousand",
+        "mark",
+        "carry",
+        "nocarry",
+        "low",
+        "high",
+    )
+    total = {key: 0 for key in keys}
+    hold = {key: 0 for key in keys}
+    min_result = HUNDRED_THOUSAND_CAP
+    max_result = -1
+    for left in range(cap - span + 1, cap):
+        if (left - (cap - span)) % 1000 == 0:
+            print(f"hundred thousand census left {left}", flush=True)
+        left_mod = left % RADIX
+        for right in range(cap - left, span):
+            result = left + right
+            kind = 0 if right < RADIX else 1 if right < place else 2 if right < block else 3
+            held_row = (left * 3 + right * 4 + 6 * kind) % 5 == 0
+            if result < min_result:
+                min_result = result
+            if result > max_result:
+                max_result = result
+            total["n"] += 1
+            if held_row:
+                hold["n"] += 1
+            band = "ones" if kind == 0 else "place" if kind == 1 else "block" if kind == 2 else "thou"
+            total[band] += 1
+            if held_row:
+                hold[band] += 1
+            if result % RADIX == 0:
+                total["ten"] += 1
+                if held_row:
+                    hold["ten"] += 1
+            if result % place == 0:
+                total["hundred"] += 1
+                if held_row:
+                    hold["hundred"] += 1
+            if result % block == 0:
+                total["thousand"] += 1
+                if held_row:
+                    hold["thousand"] += 1
+            if result % span == 0:
+                total["mark"] += 1
+                if held_row:
+                    hold["mark"] += 1
+            hand = "carry" if left_mod + right % RADIX >= RADIX else "nocarry"
+            total[hand] += 1
+            if held_row:
+                hold[hand] += 1
+            if result < cap + RADIX:
+                total["low"] += 1
+                if held_row:
+                    hold["low"] += 1
+            if result >= cap + span - place:
+                total["high"] += 1
+                if held_row:
+                    hold["high"] += 1
+    out: dict[str, int] = {}
+    for key, value in total.items():
+        out[key] = value
+        out[key + "_train"] = value - hold[key]
+        out[key + "_hold"] = hold[key]
+    out["train"] = out["n_train"]
+    out["hold"] = out["n_hold"]
+    out["min_result"] = min_result
+    out["max_result"] = max_result
+    print(f"hundred thousand census {out['n']}", flush=True)
     return out
 
 

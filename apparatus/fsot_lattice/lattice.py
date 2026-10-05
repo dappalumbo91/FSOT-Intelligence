@@ -25,6 +25,10 @@ thousand-step counted ten times, and that ten-thousand place names
 the result. A ten-thousand name re-enters as an operand: that step
 folds back up, one name in 0..999 joins it, and one consensus pass
 adds or subtracts a name in 0..9999. The result stays inside 0..10999.
+Two ten-thousand names share one consensus pass. The spelling reads their
+difference while it stays inside 0..999. Their sum leaves the table.
+A sum that leaves 0..99999 sheds the ten-thousand step counted ten
+times, and that hundred-thousand place names the result.
 Trit masks identify symbols and gate the operator. Bonds are the
 long-term pathways written at idle.
 
@@ -59,7 +63,9 @@ from fsot_lattice.tasks import (
     HundredOp,
     HundredSum,
     Lexeme,
+    HundredThousandSum,
     TenThousandOp,
+    TenThousandPair,
     TenThousandSum,
     ThousandOp,
     ThousandPair,
@@ -332,7 +338,17 @@ class Lattice:
         return self.word_value[WORD_OF[digit]]
 
     def fold_steps(self, left: float, steps: list[tuple[int, float]]) -> float:
-        """Each step is (sign, right-hand gauge) applied to the running vessel."""
+        """Each step is (sign, right-hand gauge) applied to the running vessel.
+
+        The compiled attend folds the chain in one call. A miss keeps this loop.
+        """
+        from fsot_lattice import fast_attend
+
+        fast_attend.ensure(self)
+        if fast_attend.enabled() and steps:
+            got = fast_attend.fold_steps(left, steps)
+            if got is not None:
+                return got
         acc = left
         for sign, right in steps:
             acc = self.consensus_quantity(acc, right, sign)
@@ -409,6 +425,12 @@ class Lattice:
         steps = [(self.routed_sign("+"), thousand) for _ in range(len(DIGITS))]
         return self.fold_steps(0.0, steps)
 
+    def hundred_thousand_quantity(self, surface: str) -> float:
+        """The place past 99999: the ten-thousand step counted ten times."""
+        ten_thousand = self.ten_thousand_quantity(surface)
+        steps = [(self.routed_sign("+"), ten_thousand) for _ in range(len(DIGITS))]
+        return self.fold_steps(0.0, steps)
+
     def _shed(self, quantity: float, step: float) -> tuple[int, float]:
         """Count steps that leave a remainder above the negative drop.
 
@@ -441,6 +463,10 @@ class Lattice:
         """Count how many ten-thousand-steps leave a remainder above the negative drop."""
         return self._shed(quantity, ten_thousand)
 
+    def shed_hundred_thousand(self, quantity: float, hundred_thousand: float) -> tuple[int, float]:
+        """Count how many hundred-thousand-steps leave a remainder above the negative drop."""
+        return self._shed(quantity, hundred_thousand)
+
     def read_place(
         self,
         quantity: float,
@@ -450,6 +476,7 @@ class Lattice:
         hundred: float | None = None,
         thousand: float | None = None,
         ten_thousand: float | None = None,
+        hundred_thousand: float | None = None,
     ) -> tuple[int, float, float, float]:
         """Integer, units remainder, runner-up margin, distance to the units gauge.
 
@@ -460,11 +487,14 @@ class Lattice:
         so a synthetic line does not shed against the lattice's own thousand.
         A passed thousand without a ten-thousand uses that thousand counted ten
         times, so a synthetic line does not shed against the lattice's own
-        ten-thousand. The ten-thousand shed runs before the thousand shed.
+        ten-thousand. A passed ten-thousand without a hundred-thousand uses
+        that ten-thousand counted ten times. The hundred-thousand shed runs
+        before the ten-thousand shed.
         """
         passed_ten = ten is not None
         passed_hundred = hundred is not None
         passed_thousand = thousand is not None
+        passed_ten_thousand = ten_thousand is not None
         if ten is None:
             ten = self.ten_quantity(surface)
         if gauges is None:
@@ -481,14 +511,23 @@ class Lattice:
                 ten_thousand = thousand * len(gauges)
             else:
                 ten_thousand = self.ten_thousand_quantity(surface)
+        if hundred_thousand is None:
+            if passed_ten_thousand or passed_thousand or passed_hundred or passed_ten:
+                hundred_thousand = ten_thousand * len(gauges)
+            else:
+                hundred_thousand = self.hundred_thousand_quantity(surface)
         from fsot_lattice import fast_attend
 
         fast_attend.ensure(self)
         if fast_attend.enabled():
-            got = fast_attend.read_place(quantity, gauges, ten, hundred, thousand, ten_thousand)
+            got = fast_attend.read_place(
+                quantity, gauges, ten, hundred, thousand, ten_thousand, hundred_thousand
+            )
             if got is not None:
                 return got
-        return self._read_place_py(quantity, gauges, ten, hundred, thousand, ten_thousand)
+        return self._read_place_py(
+            quantity, gauges, ten, hundred, thousand, ten_thousand, hundred_thousand
+        )
 
     def _read_place_py(
         self,
@@ -498,15 +537,21 @@ class Lattice:
         hundred: float,
         thousand: float,
         ten_thousand: float,
+        hundred_thousand: float,
     ) -> tuple[int, float, float, float]:
         """The same sheds as the compiled read, through the Python attend."""
+        hundred_thousands, quantity = self.shed_hundred_thousand(quantity, hundred_thousand)
         ten_thousands, quantity = self.shed_ten_thousand(quantity, ten_thousand)
         thousands, quantity = self.shed_thousand(quantity, thousand)
         hundreds, quantity = self.shed_hundred(quantity, hundred)
         tens, rem = self.shed_place(quantity, ten)
         units, margin, dist = _nearest_detail(rem, gauges)
         span = len(gauges)
-        named = (((ten_thousands * span + thousands) * span + hundreds) * span + tens) * span + units
+        named = (
+            ((((hundred_thousands * span + ten_thousands) * span + thousands) * span + hundreds) * span + tens)
+            * span
+            + units
+        )
         return named, rem, margin, dist
 
     def lexeme_quantity(self, row: Lexeme, surface: str) -> float:
@@ -891,6 +936,55 @@ class Lattice:
     def predict_ten_thousand_op(self, row: TenThousandOp, surface: str) -> str:
         named = self.read_place(self.ten_thousand_op_quantity(row, surface), surface)[0]
         if named < 0 or named >= len(DIGITS) ** 4 + len(DIGITS) ** 3:
+            return "?"
+        if surface == "digit":
+            return decimal_name(named)
+        return number_name(named)
+
+    def ten_thousand_pair_quantity(self, row: TenThousandPair, surface: str) -> float:
+        """Both ten-thousand names are rebuilt, then one consensus pass subtracts them."""
+        ten_thousand = self.ten_thousand_quantity(surface)
+        thousand = self.thousand_quantity(surface)
+        hundred = self.hundred_quantity(surface)
+        ten = self.ten_quantity(surface)
+        gauges = self.gauge_line(surface)
+        left = self.compose_ten_thousand(row.left, ten_thousand, thousand, hundred, ten, gauges)
+        right = self.compose_ten_thousand(row.right, ten_thousand, thousand, hundred, ten, gauges)
+        return self.consensus_quantity(left, right, self.routed_sign("-"))
+
+    def algebraic_ten_thousand_pair(self, row: TenThousandPair, surface: str) -> float:
+        return self.algebraic_ten_thousand_name(row.left, surface) - self.algebraic_ten_thousand_name(
+            row.right, surface
+        )
+
+    def predict_ten_thousand_pair(self, row: TenThousandPair, surface: str) -> str:
+        named = self.read_place(self.ten_thousand_pair_quantity(row, surface), surface)[0]
+        if named < 0 or named >= len(DIGITS) ** 3:
+            return "?"
+        if surface == "digit":
+            return decimal_name(named)
+        return number_name(named)
+
+    def hundred_thousand_sum_quantity(self, row: HundredThousandSum, surface: str) -> float:
+        """A name in 90001..99999, then a name in 1..9999. One consensus pass."""
+        ten_thousand = self.ten_thousand_quantity(surface)
+        thousand = self.thousand_quantity(surface)
+        hundred = self.hundred_quantity(surface)
+        ten = self.ten_quantity(surface)
+        gauges = self.gauge_line(surface)
+        left = self.compose_ten_thousand(row.left, ten_thousand, thousand, hundred, ten, gauges)
+        right = self.compose_below_ten_thousand(row.right, thousand, hundred, ten, gauges)
+        return self.consensus_quantity(left, right, self.routed_sign("+"))
+
+    def algebraic_hundred_thousand_sum(self, row: HundredThousandSum, surface: str) -> float:
+        left = self.algebraic_ten_thousand_name(row.left, surface)
+        right = self.algebraic_below_ten_thousand(row.right, surface)
+        return left + right
+
+    def predict_hundred_thousand(self, row: HundredThousandSum, surface: str) -> str:
+        named = self.read_place(self.hundred_thousand_sum_quantity(row, surface), surface)[0]
+        start = len(DIGITS) ** 5
+        if named < start or named >= start + len(DIGITS) ** 4:
             return "?"
         if surface == "digit":
             return decimal_name(named)

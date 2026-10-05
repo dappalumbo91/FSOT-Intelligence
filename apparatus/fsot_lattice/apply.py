@@ -6,8 +6,10 @@ two-digit names re-entering as operands, two places in one
 expression, sums that leave 0..99, a hundred name used as an
 operand, sums that leave 0..999, a thousand name used as an
 operand, two thousand names in one expression, sums that leave
-0..9999, and a ten-thousand name used as an operand whose result
-stays inside 0..10999 are produced here and scored together. They add no gauges.
+0..9999, a ten-thousand name used as an operand whose result
+stays inside 0..10999, two ten-thousand names whose difference
+stays inside 0..999, and sums that leave 0..99999 are produced here
+and scored together. They add no gauges.
 """
 
 from __future__ import annotations
@@ -19,6 +21,8 @@ from fsot_lattice.lattice import AMP, Lattice
 from fsot_lattice.tasks import (
     OP_WORD,
     RADIX,
+    HUNDRED_THOUSAND,
+    HUNDRED_THOUSAND_CAP,
     TEN_THOUSAND_CAP,
     THOUSAND_CAP,
     THOUSAND_SPAN,
@@ -26,8 +30,10 @@ from fsot_lattice.tasks import (
     Claim,
     HundredOp,
     HundredSum,
+    HundredThousandSum,
     Lexeme,
     TenThousandOp,
+    TenThousandPair,
     TenThousandSum,
     ThousandOp,
     ThousandPair,
@@ -40,7 +46,9 @@ from fsot_lattice.tasks import (
     all_hundred_sums,
     all_lexemes,
     all_thousand_sums,
+    census_hundred_thousand_sums,
     census_ten_thousand_ops,
+    census_ten_thousand_pairs,
     census_ten_thousand_sums,
     census_thousand_ops,
     census_thousand_pairs,
@@ -58,9 +66,12 @@ from fsot_lattice.tasks import (
     split_hundred_sums,
     split_lexemes,
     split_thousand_sums,
+    hundred_thousand_held,
+    hundred_thousand_kind,
     ten_thousand_held,
     ten_thousand_kind,
     ten_thousand_op_held,
+    ten_thousand_pair_held,
     thousand_op_held,
     thousand_pair_held,
     split_place_pairs,
@@ -122,6 +133,8 @@ def check_generated(lattice: Lattice) -> None:
     _check_thou_pairs(lattice)
     _check_ten_thousands(lattice)
     _check_ten_thou_ops(lattice)
+    _check_ten_thou_pairs(lattice)
+    _check_hundred_thousands(lattice)
 
 
 def _check_lexicon(lattice: Lattice) -> None:
@@ -688,8 +701,8 @@ def _check_thousands(lattice: Lattice) -> None:
             raise RuntimeError(f"{number} spelled {got}")
     if number_name(10000) != "ten thousand":
         raise RuntimeError("ten thousand left the spelling table")
-    if number_name(11000) != "?":
-        raise RuntimeError("a name past ten thousand nine hundred ninety-nine entered this table")
+    if number_name(11000) != "eleven thousand" or number_name(110000) != "?":
+        raise RuntimeError("the spelling table left eleven thousand or passed one hundred ten thousand")
     if decimal_name(1000) != "1000":
         raise RuntimeError("the decimal thousand left the integer")
     step = K
@@ -1193,8 +1206,8 @@ def _check_thou_pairs(lattice: Lattice) -> None:
     """
     if number_name(10000) != "ten thousand":
         raise RuntimeError("ten thousand left the spelling table")
-    if number_name(11000) != "?":
-        raise RuntimeError("a name past ten thousand nine hundred ninety-nine entered the spelling table")
+    if number_name(11000) != "eleven thousand" or number_name(110000) != "?":
+        raise RuntimeError("the spelling table left eleven thousand or passed one hundred ten thousand")
     if number_name(0) != "zero":
         raise RuntimeError("a cancelled thousand pair lost the word zero")
     spells = (
@@ -1456,8 +1469,10 @@ def _check_ten_thousands(lattice: Lattice) -> None:
         got = number_name(number)
         if got != spelling:
             raise RuntimeError(f"{number} spelled {got}")
-    if number_name(11000) != "?" or number_name(12000) != "?":
-        raise RuntimeError("a name past ten thousand nine hundred ninety-nine entered the table")
+    if number_name(11000) != "eleven thousand" or number_name(12000) != "twelve thousand":
+        raise RuntimeError("eleven thousand or twelve thousand left the spelling table")
+    if number_name(110000) != "?":
+        raise RuntimeError("a name past one hundred nine thousand nine hundred ninety-nine entered the table")
     if decimal_name(10000) != "10000":
         raise RuntimeError("the decimal ten thousand left the integer")
     counts = census_ten_thousand_sums()
@@ -1637,8 +1652,8 @@ def _check_ten_thou_ops(lattice: Lattice) -> None:
         got = number_name(number)
         if got != spelling:
             raise RuntimeError(f"{number} spelled {got}")
-    if number_name(11000) != "?":
-        raise RuntimeError("eleven thousand entered the operand table")
+    if number_name(11000) != "eleven thousand" or number_name(110000) != "?":
+        raise RuntimeError("the spelling table left eleven thousand or passed one hundred ten thousand")
     if decimal_name(10000) != "10000":
         raise RuntimeError("the decimal ten-thousand operand left the integer")
     counts = census_ten_thousand_ops()
@@ -1919,6 +1934,184 @@ def _check_ten_thou_ops(lattice: Lattice) -> None:
             raise RuntimeError(f"{row.digit_prompt()}{row.digit_answer()} left the difference")
         if row.result < 0 or row.result >= TEN_THOUSAND_CAP:
             raise RuntimeError(f"{row.digit_prompt()}{row.digit_answer()} left 0..10999")
+
+
+def _check_ten_thou_pairs(lattice: Lattice) -> None:
+    """Two ten-thousand names. The difference stays inside 0..999.
+
+    Their sum leaves the spelled table. Mixed units are checked on a pure
+    line. Equal names cancel, and the fresh digit read of that zero is the
+    nearest gauge to a remainder of zero.
+    """
+    spells = (
+        (0, "zero"),
+        (1, "one"),
+        (9, "nine"),
+        (24, "twenty-four"),
+        (50, "fifty"),
+        (500, "five hundred"),
+        (999, "nine hundred ninety-nine"),
+    )
+    for number, spelling in spells:
+        got = number_name(number)
+        if got != spelling:
+            raise RuntimeError(f"{number} spelled {got}")
+    counts = census_ten_thousand_pairs()
+    width = TEN_THOUSAND_CAP - THOUSAND_CAP
+    n = width * (width + 1) // 2
+    if counts["n"] != n or counts["zero"] != width:
+        raise RuntimeError("ten-thousand pairs left the differences of 10000..10999")
+    if counts["ones"] != sum(width - diff for diff in range(RADIX)):
+        raise RuntimeError("results under ten left that band")
+    if counts["place"] != sum(width - diff for diff in range(RADIX, RADIX * RADIX)):
+        raise RuntimeError("results from ten through ninety-nine left that band")
+    if counts["block"] != sum(width - diff for diff in range(RADIX * RADIX, width)):
+        raise RuntimeError("results from one hundred up left that band")
+    if counts["ones"] + counts["place"] + counts["block"] != counts["n"]:
+        raise RuntimeError("ones, place, and block left the ten-thousand pair family")
+    if counts["ten"] != sum(width - RADIX * step for step in range(width // RADIX)):
+        raise RuntimeError("exact tens left the differences")
+    if counts["hundred"] != sum(width - (RADIX * RADIX) * step for step in range(RADIX)):
+        raise RuntimeError("exact hundreds left the differences")
+    if counts["low"] != sum(index + 1 for index in range(RADIX)):
+        raise RuntimeError("left names from ten thousand through ten thousand nine left that band")
+    high_span = RADIX * RADIX
+    if counts["high"] != sum((width - high_span) + 1 + index for index in range(high_span)):
+        raise RuntimeError("left names from ten thousand nine hundred left that band")
+    if counts["righthigh"] != high_span * (high_span + 1) // 2:
+        raise RuntimeError("right names from ten thousand nine hundred left that band")
+    if counts["top"] != high_span * (high_span + 1) // 2:
+        raise RuntimeError("results from nine hundred up left that band")
+    if counts["borrow"] + counts["noborrow"] != counts["n"]:
+        raise RuntimeError("borrows left the differences")
+    if counts["borrow_ten"] != 0:
+        raise RuntimeError("a borrow landed on an exact ten")
+    if counts["out"] != 0 or counts["cross"] != counts["n"]:
+        raise RuntimeError("a ten-thousand pair stayed inside the ten-thousands")
+    if counts["min_result"] != 0 or counts["max_result"] != width - 1:
+        raise RuntimeError(f"ten-thousand pair results span {counts['min_result']}..{counts['max_result']}")
+    if counts["hold"] * 4 != counts["train"] or counts["train"] + counts["hold"] != counts["n"]:
+        raise RuntimeError(f"ten-thousand pair split is {counts['train']}/{counts['hold']} of {counts['n']}")
+    expected = {
+        "n": 500500,
+        "train": 400400,
+        "hold": 100100,
+        "zero": 1000,
+        "zero_train": 800,
+        "zero_hold": 200,
+        "borrow": 222750,
+        "borrow_train": 178200,
+        "borrow_hold": 44550,
+        "noborrow": 277750,
+        "noborrow_train": 222200,
+        "noborrow_hold": 55550,
+        "ten": 50500,
+        "ten_train": 40400,
+        "ten_hold": 10100,
+        "hundred": 5500,
+        "hundred_train": 4400,
+        "hundred_hold": 1100,
+        "ones": 9955,
+        "ones_train": 7964,
+        "ones_hold": 1991,
+        "place": 85095,
+        "place_train": 68076,
+        "place_hold": 17019,
+        "block": 405450,
+        "block_train": 324360,
+        "block_hold": 81090,
+        "low": 55,
+        "low_train": 44,
+        "low_hold": 11,
+        "high": 95050,
+        "high_train": 76040,
+        "high_hold": 19010,
+        "righthigh": 5050,
+        "righthigh_train": 4040,
+        "righthigh_hold": 1010,
+        "top": 5050,
+        "top_train": 4040,
+        "top_hold": 1010,
+        "cross": 500500,
+    }
+    for key, value in expected.items():
+        if counts[key] != value:
+            raise RuntimeError(f"ten-thousand pair {key} count is {counts[key]}")
+    for key in (
+        "zero",
+        "borrow",
+        "noborrow",
+        "ten",
+        "hundred",
+        "ones",
+        "place",
+        "block",
+        "low",
+        "high",
+        "righthigh",
+        "top",
+    ):
+        if counts[key + "_train"] == 0 or counts[key + "_hold"] == 0:
+            raise RuntimeError(f"ten-thousand pair split hid every {key} on one side")
+    step = K
+    gauges = [index * step for index in range(RADIX)]
+    ten = gauges[9] + gauges[1]
+    hundred = ten * RADIX
+    thousand = hundred * RADIX
+    folded = 0.0
+    for _ in range(RADIX):
+        folded = lattice.consensus_quantity(folded, thousand, 1)
+    if abs(folded - RADIX * thousand) > 1e-9:
+        raise RuntimeError("the synthetic ten-thousand left the thousand counted ten times")
+
+    def _syn_read(left: int, right: int) -> tuple[int, float, float]:
+        left_q = lattice.compose_ten_thousand(left, folded, thousand, hundred, ten, gauges)
+        right_q = lattice.compose_ten_thousand(right, folded, thousand, hundred, ten, gauges)
+        quantity = lattice.consensus_quantity(left_q, right_q, -1)
+        named, remainder, margin, _dist = lattice.read_place(
+            quantity, "digit", ten, gauges, hundred, thousand, folded
+        )
+        return named, remainder, margin
+
+    for number in (10000, 10001, 10024, 10050, 10100, 10500, 10990, 10999):
+        built = lattice.compose_ten_thousand(number, folded, thousand, hundred, ten, gauges)
+        if abs(built - number * step) > 1e-9:
+            raise RuntimeError(f"synthetic {number} left the integer line")
+    cases = (
+        (10000, 10000, 0),
+        (10001, 10000, 1),
+        (10024, 10000, 24),
+        (10050, 10000, 50),
+        (10100, 10050, 50),
+        (10500, 10000, 500),
+        (10999, 10000, 999),
+        (10999, 10990, 9),
+        (10999, 10999, 0),
+    )
+    for left, right, result in cases:
+        named, remainder, margin = _syn_read(left, right)
+        if named != result:
+            raise RuntimeError(f"rebuilt {left}-{right} read {named}")
+        if margin <= DROP:
+            raise RuntimeError(f"rebuilt {left}-{right} sat inside the drop")
+        if result % RADIX == 0 and abs(remainder) >= DROP:
+            raise RuntimeError(f"exact ten {left}-{right} left a remainder")
+    fresh = tuple(TenThousandPair(left, right, result) for left, right, result in cases)
+    for row in fresh:
+        if abs(
+            lattice.ten_thousand_pair_quantity(row, "digit")
+            - lattice.algebraic_ten_thousand_pair(row, "digit")
+        ) > 1e-9:
+            raise RuntimeError(f"fresh {row.digit_prompt()}{row.digit_answer()} left the algebraic difference")
+        got = lattice.predict_ten_thousand_pair(row, "digit")
+        if got != row.digit_answer():
+            raise RuntimeError(f"fresh {row.digit_prompt()}{row.digit_answer()} read {got}")
+        if not (
+            THOUSAND_CAP <= row.right <= row.left < TEN_THOUSAND_CAP
+            and row.result == row.left - row.right
+            and row.result < THOUSAND_SPAN
+        ):
+            raise RuntimeError(f"{row.digit_prompt()}{row.digit_answer()} left the ten-thousand pair family")
 
 
 def _score_labels(pairs: list[tuple[str, str, str]]) -> tuple[float, int, list[str]]:
@@ -2745,6 +2938,15 @@ def _thou_note(
         note(buckets["block"], ok, gap, margin, dist, remainder, exact, miss)
 
 
+def _bound_reader(gauges, ten, hundred, thousand, ten_thousand, hundred_thousand=None):
+    """One C call per row when the attend can hold this surface. Otherwise None."""
+    from fsot_lattice import fast_attend
+
+    if fast_attend.bind_read(gauges, ten, hundred, thousand, ten_thousand, hundred_thousand):
+        return fast_attend.consensus_read
+    return None
+
+
 def _score_thou_pairs(lattice: Lattice, surface: str, counts: dict[str, int]) -> dict[str, dict]:
     """One pass tags train, hold, and the structural subsets.
 
@@ -2768,6 +2970,7 @@ def _score_thou_pairs(lattice: Lattice, surface: str, counts: dict[str, int]) ->
     read = cache["read"]
     plus = cache["plus"]
     minus = cache["minus"]
+    reader = _bound_reader(gauges, ten, hundred, thousand, thousand * len(gauges))
     names = (
         "train",
         "hold",
@@ -2821,6 +3024,7 @@ def _score_thou_pairs(lattice: Lattice, surface: str, counts: dict[str, int]) ->
                     plus,
                     span,
                     place,
+                    reader,
                 )
                 seen += 1
                 if seen % 500000 == 0:
@@ -2851,6 +3055,7 @@ def _score_thou_pairs(lattice: Lattice, surface: str, counts: dict[str, int]) ->
                 minus,
                 span,
                 place,
+                reader,
             )
             seen += 1
             if seen % 500000 == 0:
@@ -2904,9 +3109,14 @@ def _thou_pair_note(
     sign: int,
     span: int,
     place: int,
+    reader,
 ) -> None:
-    quantity = consensus(left_q, right_q, sign)
-    named, remainder, margin, dist = read(quantity, surface, ten, gauges, hundred, thousand)
+    got = reader(left_q, right_q, sign) if reader is not None else None
+    if got is None:
+        quantity = consensus(left_q, right_q, sign)
+        named, remainder, margin, dist = read(quantity, surface, ten, gauges, hundred, thousand)
+    else:
+        quantity, named, remainder, margin, dist = got
     ok = named == result
     gap = abs(quantity - (left_alg + sign * right_alg))
     exact = result % RADIX == 0
@@ -3154,6 +3364,7 @@ def _score_ten_thou_ops(lattice: Lattice, surface: str, counts: dict[str, int]) 
     read = cache["read"]
     plus = cache["plus"]
     minus = cache["minus"]
+    reader = _bound_reader(gauges, ten, hundred, thousand, ten_thousand)
     names = (
         "train",
         "hold",
@@ -3228,6 +3439,7 @@ def _score_ten_thou_ops(lattice: Lattice, surface: str, counts: dict[str, int]) 
                 span,
                 place,
                 cap,
+                reader,
             )
             seen += 1
             if seen % 500000 == 0:
@@ -3258,6 +3470,7 @@ def _score_ten_thou_ops(lattice: Lattice, surface: str, counts: dict[str, int]) 
                 span,
                 place,
                 cap,
+                reader,
             )
             seen += 1
             if seen % 500000 == 0:
@@ -3312,11 +3525,16 @@ def _ten_op_note(
     span: int,
     place: int,
     cap: int,
+    reader,
 ) -> None:
-    quantity = consensus(left_q, right_q, sign)
-    named, remainder, margin, dist = read(
-        quantity, surface, ten, gauges, hundred, thousand, ten_thousand
-    )
+    got = reader(left_q, right_q, sign) if reader is not None else None
+    if got is None:
+        quantity = consensus(left_q, right_q, sign)
+        named, remainder, margin, dist = read(
+            quantity, surface, ten, gauges, hundred, thousand, ten_thousand
+        )
+    else:
+        quantity, named, remainder, margin, dist = got
     ok = named == result
     gap = abs(quantity - (left_alg + sign * right_alg))
     exact = result % RADIX == 0
@@ -3360,6 +3578,486 @@ def _ten_op_note(
         note(buckets["right1000"], ok, gap, margin, dist, remainder, exact, miss)
 
 
+def _ten_pair_spell(named: int, surface: str) -> str:
+    if named < 0 or named >= THOUSAND_SPAN:
+        return "?"
+    if surface == "digit":
+        return decimal_name(named)
+    return number_name(named)
+
+
+def _score_ten_thou_pairs(lattice: Lattice, surface: str, counts: dict[str, int]) -> dict[str, dict]:
+    """One pass tags train, hold, and the structural subsets.
+
+    Each name 10000..10999 is rebuilt once. The pair itself is one consensus
+    pass, and the operation is minus. Running totals keep the report off the
+    row list.
+    """
+    print(f"ten thousand pair {surface} start", flush=True)
+    started = time.perf_counter()
+    cache = _ten_thou_op_cache(lattice, surface)
+    cap = THOUSAND_CAP
+    span = THOUSAND_SPAN
+    place = RADIX * RADIX
+    ten = cache["ten"]
+    gauges = cache["gauges"]
+    hundred = cache["hundred"]
+    thousand = cache["thousand"]
+    ten_thousand = cache["ten_thousand"]
+    left_q_of = cache["left_q"]
+    left_alg_of = cache["left_alg"]
+    minus = cache["minus"]
+    reader = _bound_reader(gauges, ten, hundred, thousand, ten_thousand)
+    consensus = cache["consensus"]
+    read = cache["read"]
+    names = (
+        "train",
+        "hold",
+        "closed",
+        "zero",
+        "borrow",
+        "ten",
+        "hundred",
+        "ones",
+        "place",
+        "block",
+        "low",
+        "high",
+        "righthigh",
+        "top",
+    )
+    buckets = {name: _blank_running() for name in names}
+    note = _note_running
+    seen = 0
+    high_cut = cap + (RADIX - 1) * place
+    for left in range(cap, TEN_THOUSAND_CAP):
+        rest = left - cap
+        left_q = left_q_of[rest]
+        left_alg = left_alg_of[rest]
+        left_mod = left % RADIX
+        low_left = left < cap + RADIX
+        high_left = left >= high_cut
+        for right in range(cap, left + 1):
+            result = left - right
+            right_rest = right - cap
+            right_q = left_q_of[right_rest]
+            right_alg = left_alg_of[right_rest]
+            got = reader(left_q, right_q, minus) if reader is not None else None
+            if got is None:
+                quantity = consensus(left_q, right_q, minus)
+                named, remainder, margin, dist = read(
+                    quantity, surface, ten, gauges, hundred, thousand, ten_thousand
+                )
+            else:
+                quantity, named, remainder, margin, dist = got
+            ok = named == result
+            gap = abs(quantity - (left_alg - right_alg))
+            exact = result % RADIX == 0
+            miss = None
+            if not ok:
+                want = decimal_name(result) if surface == "digit" else number_name(result)
+                spelled = _ten_pair_spell(named, surface)
+                if surface == "digit":
+                    shown = f"{decimal_name(left)}-{decimal_name(right)}={decimal_name(result)}"
+                else:
+                    shown = f"what is {number_name(left)} minus {number_name(right)}"
+                miss = f"{shown} -> {spelled} (want {want})"
+            held = ten_thousand_pair_held(left, right)
+            note(buckets["closed"], ok, gap, margin, dist, remainder, exact, miss)
+            note(buckets["hold" if held else "train"], ok, gap, margin, dist, remainder, exact, miss)
+            if result == 0:
+                note(buckets["zero"], ok, gap, margin, dist, remainder, True, miss)
+            if left_mod < right % RADIX:
+                note(buckets["borrow"], ok, gap, margin, dist, remainder, exact, miss)
+            if exact:
+                note(buckets["ten"], ok, gap, margin, dist, remainder, True, miss)
+            if result % place == 0:
+                note(buckets["hundred"], ok, gap, margin, dist, remainder, True, miss)
+            if result < RADIX:
+                note(buckets["ones"], ok, gap, margin, dist, remainder, exact, miss)
+            elif result < place:
+                note(buckets["place"], ok, gap, margin, dist, remainder, exact, miss)
+            else:
+                note(buckets["block"], ok, gap, margin, dist, remainder, exact, miss)
+            if low_left:
+                note(buckets["low"], ok, gap, margin, dist, remainder, exact, miss)
+            if high_left:
+                note(buckets["high"], ok, gap, margin, dist, remainder, exact, miss)
+            if right >= high_cut:
+                note(buckets["righthigh"], ok, gap, margin, dist, remainder, exact, miss)
+            if result >= 9 * place:
+                note(buckets["top"], ok, gap, margin, dist, remainder, exact, miss)
+            seen += 1
+            if seen % 100000 == 0:
+                elapsed = time.perf_counter() - started
+                print(f"ten thousand pair {surface} {seen} {elapsed:.0f}s", flush=True)
+    print(f"ten thousand pair {surface} done", flush=True)
+    if seen != counts["n"] or buckets["train"]["n"] != counts["train"] or buckets["hold"]["n"] != counts["hold"]:
+        raise RuntimeError(
+            f"ten thousand pair {surface} scored {seen} "
+            f"({buckets['train']['n']}/{buckets['hold']['n']}) of {counts['n']}"
+        )
+    for key in (
+        "zero",
+        "borrow",
+        "ten",
+        "hundred",
+        "ones",
+        "place",
+        "block",
+        "low",
+        "high",
+        "righthigh",
+        "top",
+    ):
+        if buckets[key]["n"] != counts[key]:
+            raise RuntimeError(f"ten thousand pair {surface} {key} scored {buckets[key]['n']}")
+    return {name: _finish_running(bucket) for name, bucket in buckets.items()}
+
+
+def _check_hundred_thousands(lattice: Lattice) -> None:
+    """The hundred-thousand place is the ten-thousand step counted ten times.
+
+    Mixed units are checked on a pure line. The fresh digit gauges are exact
+    when the extra K on each units place cancels into that hundred-thousand,
+    or when a units digit is absent on both sides. A name still inside
+    0..99999 sheds zero hundred-thousands.
+    """
+    spells = (
+        (10000, "ten thousand"),
+        (10999, "ten thousand nine hundred ninety-nine"),
+        (11000, "eleven thousand"),
+        (12000, "twelve thousand"),
+        (20000, "twenty thousand"),
+        (21000, "twenty-one thousand"),
+        (21024, "twenty-one thousand twenty-four"),
+        (90000, "ninety thousand"),
+        (90001, "ninety thousand one"),
+        (99999, "ninety-nine thousand nine hundred ninety-nine"),
+        (100000, "one hundred thousand"),
+        (100001, "one hundred thousand one"),
+        (100010, "one hundred thousand ten"),
+        (100050, "one hundred thousand fifty"),
+        (100100, "one hundred thousand one hundred"),
+        (101000, "one hundred one thousand"),
+        (109000, "one hundred nine thousand"),
+        (109998, "one hundred nine thousand nine hundred ninety-eight"),
+        (109999, "one hundred nine thousand nine hundred ninety-nine"),
+    )
+    for number, spelling in spells:
+        got = number_name(number)
+        if got != spelling:
+            raise RuntimeError(f"{number} spelled {got}")
+    if number_name(110000) != "?" or number_name(120000) != "?":
+        raise RuntimeError("a name past one hundred nine thousand nine hundred ninety-nine entered the table")
+    if decimal_name(100000) != "100000":
+        raise RuntimeError("the decimal hundred thousand left the integer")
+    counts = census_hundred_thousand_sums()
+    width = THOUSAND_CAP
+    if counts["n"] != (width - 1) * width // 2:
+        raise RuntimeError("hundred-thousand sums left the ways to write 100000..109998")
+    if counts["ones"] != sum(range(1, RADIX)):
+        raise RuntimeError("hundred-thousand digit rights left 1..9")
+    if counts["place"] != sum(range(RADIX, RADIX * RADIX)):
+        raise RuntimeError("hundred-thousand place rights left 10..99")
+    if counts["block"] != sum(range(RADIX * RADIX, THOUSAND_SPAN)):
+        raise RuntimeError("hundred-thousand block rights left 100..999")
+    if counts["thou"] != sum(range(THOUSAND_SPAN, THOUSAND_CAP)):
+        raise RuntimeError("hundred-thousand thousand-name rights left 1000..9999")
+    if counts["ones"] + counts["place"] + counts["block"] + counts["thou"] != counts["n"]:
+        raise RuntimeError("hundred-thousand bands do not cover the family")
+    if counts["mark"] != width - 1:
+        raise RuntimeError("the exact hundred-thousands are not the ways to write 100000")
+    if counts["ten"] != 5004000:
+        raise RuntimeError("hundred-thousand exact tens left that band")
+    if counts["hundred"] != 504900:
+        raise RuntimeError("hundred-thousand exact hundreds left that band")
+    if counts["thousand"] != 54990:
+        raise RuntimeError("hundred-thousand exact thousands left that band")
+    if counts["low"] != 99945:
+        raise RuntimeError("the hundred-thousand low band left 100000..100009")
+    if counts["high"] != 4950:
+        raise RuntimeError("the hundred-thousand high band left 109900..109998")
+    if counts["carry"] != 22522500 or counts["nocarry"] != 27472500:
+        raise RuntimeError("hundred-thousand carries left the units sums")
+    if counts["min_result"] != HUNDRED_THOUSAND or counts["max_result"] != 109998:
+        raise RuntimeError("hundred-thousand results left 100000..109998")
+    if counts["train"] + counts["hold"] != counts["n"] or counts["hold"] * 4 != counts["train"]:
+        raise RuntimeError(
+            f"hundred-thousand split is {counts['train']}/{counts['hold']} of {counts['n']}"
+        )
+    for key in (
+        "ones",
+        "place",
+        "block",
+        "thou",
+        "ten",
+        "hundred",
+        "thousand",
+        "mark",
+        "carry",
+        "nocarry",
+        "low",
+        "high",
+    ):
+        if counts[key + "_train"] == 0 or counts[key + "_hold"] == 0:
+            raise RuntimeError(f"hundred-thousand split hid every {key} on one side")
+    step = K
+    gauges = [index * step for index in range(RADIX)]
+    ten = gauges[9] + gauges[1]
+    hundred = ten * RADIX
+    thousand = hundred * RADIX
+    ten_thousand = thousand * RADIX
+    hundred_thousand = ten_thousand * RADIX
+
+    def _syn_read(left: int, right: int) -> tuple[int, float, float]:
+        left_q = lattice.compose_ten_thousand(left, ten_thousand, thousand, hundred, ten, gauges)
+        right_q = lattice.compose_below_ten_thousand(right, thousand, hundred, ten, gauges)
+        quantity = lattice.consensus_quantity(left_q, right_q, 1)
+        named, remainder, margin, _dist = lattice.read_place(
+            quantity, "digit", ten, gauges, hundred, thousand, ten_thousand, hundred_thousand
+        )
+        return named, remainder, margin
+
+    for number in (10000, 90000, 90001, 95000, 99000, 99999):
+        got = lattice.compose_ten_thousand(number, ten_thousand, thousand, hundred, ten, gauges)
+        if abs(got - number * step) > 1e-9:
+            raise RuntimeError(f"synthetic {number} left the integer line")
+    folded = lattice.fold_steps(0.0, [(1, ten_thousand) for _ in range(RADIX)])
+    if abs(folded - hundred_thousand) > 1e-9:
+        raise RuntimeError("the synthetic hundred-thousand left the ten-thousand counted ten times")
+    cases = (
+        (99999, 1, 100000),
+        (99001, 999, 100000),
+        (95000, 5000, 100000),
+        (90001, 9999, 100000),
+        (99000, 2000, 101000),
+        (99500, 500, 100000),
+        (98000, 2500, 100500),
+        (99999, 9999, 109998),
+    )
+    for left, right, result in cases:
+        named, remainder, margin = _syn_read(left, right)
+        if named != result:
+            raise RuntimeError(f"rebuilt {left}+{right} read {named}")
+        if margin <= DROP:
+            raise RuntimeError(f"rebuilt {left}+{right} sat inside the drop")
+        if result % RADIX == 0 and abs(remainder) >= DROP:
+            raise RuntimeError(f"exact ten {left}+{right} left a remainder")
+    stay = (
+        (90001, 9998, 99999),
+        (95000, 4999, 99999),
+        (99998, 1, 99999),
+    )
+    for left, right, result in stay:
+        named, _remainder, margin = _syn_read(left, right)
+        if named != result:
+            raise RuntimeError(f"rebuilt {left}+{right} shed into the hundred-thousand")
+        if margin <= DROP:
+            raise RuntimeError(f"rebuilt {left}+{right} sat inside the drop")
+    bare = lattice.compose_ten_thousand(99999, ten_thousand, thousand, hundred, ten, gauges)
+    named, _remainder, margin, _dist = lattice.read_place(
+        bare, "digit", ten, gauges, hundred, thousand, ten_thousand, hundred_thousand
+    )
+    if named != 99999 or margin <= DROP:
+        raise RuntimeError(f"synthetic 99999 read {named}")
+    live_ten_thousand = lattice.ten_thousand_quantity("digit")
+    live_hundred_thousand = lattice.hundred_thousand_quantity("digit")
+    if abs(live_hundred_thousand - RADIX * live_ten_thousand) > 1e-9:
+        raise RuntimeError("the fresh hundred-thousand left the ten-thousand counted ten times")
+    if lattice.read_place(live_hundred_thousand, "digit")[0] != HUNDRED_THOUSAND:
+        raise RuntimeError("the hundred-thousand step did not read as 100000")
+    fresh_top = lattice.compose_ten_thousand(
+        99999,
+        live_ten_thousand,
+        lattice.thousand_quantity("digit"),
+        lattice.hundred_quantity("digit"),
+        lattice.ten_quantity("digit"),
+        lattice.gauge_line("digit"),
+    )
+    if lattice.read_place(fresh_top, "digit")[0] != 99999:
+        raise RuntimeError("99999 shed a hundred-thousand on the fresh line")
+    fresh = (
+        HundredThousandSum("digit", 99999, 1, 100000),
+        HundredThousandSum("block", 99001, 999, 100000),
+        HundredThousandSum("thou", 95000, 5000, 100000),
+        HundredThousandSum("thou", 90001, 9999, 100000),
+        HundredThousandSum("thou", 99000, 2000, 101000),
+        HundredThousandSum("block", 99500, 500, 100000),
+        HundredThousandSum("thou", 98000, 2500, 100500),
+    )
+    for row in fresh:
+        if abs(
+            lattice.hundred_thousand_sum_quantity(row, "digit")
+            - lattice.algebraic_hundred_thousand_sum(row, "digit")
+        ) > 1e-9:
+            raise RuntimeError(f"fresh {row.digit_prompt()}{row.digit_answer()} left the algebraic sum")
+        got = lattice.predict_hundred_thousand(row, "digit")
+        if got != row.digit_answer():
+            raise RuntimeError(f"fresh {row.digit_prompt()}{row.digit_answer()} read {got}")
+    demos = fresh + (HundredThousandSum("thou", 99999, 9999, 109998),)
+    for row in demos:
+        kind = hundred_thousand_kind(row.right)
+        if row.kind != ("digit", "place", "block", "thou")[kind]:
+            raise RuntimeError(f"{row.digit_prompt()}{row.digit_answer()} left its right-hand band")
+        if not (HUNDRED_THOUSAND - THOUSAND_CAP + 1 <= row.left < HUNDRED_THOUSAND):
+            raise RuntimeError(f"{row.digit_prompt()}{row.digit_answer()} is outside the hundred-thousand family")
+        if not (0 < row.right < THOUSAND_CAP):
+            raise RuntimeError(f"{row.digit_prompt()}{row.digit_answer()} put a zero or a ten-thousand on the right")
+        if row.result != row.left + row.right or not (HUNDRED_THOUSAND <= row.result < HUNDRED_THOUSAND_CAP):
+            raise RuntimeError(f"{row.digit_prompt()}{row.digit_answer()} left 100000..109998")
+
+
+def _hund_thou_spell(named: int, surface: str) -> str:
+    if named < HUNDRED_THOUSAND or named >= HUNDRED_THOUSAND_CAP:
+        return "?"
+    if surface == "digit":
+        return decimal_name(named)
+    return number_name(named)
+
+
+def _score_hundred_thousands(lattice: Lattice, surface: str, counts: dict[str, int]) -> dict[str, dict]:
+    """One pass tags train, hold, and the structural subsets.
+
+    Each name 90001..99999 is nine ten-thousand steps plus a name in 1..9999.
+    The sum itself is one consensus pass. The hundred-thousand shed is the
+    ten-thousand step counted ten times. Running totals keep the report off
+    the row list.
+    """
+    print(f"hundred thousand {surface} start", flush=True)
+    started = time.perf_counter()
+    cache = _ten_thou_op_cache(lattice, surface)
+    span = THOUSAND_CAP
+    cap = HUNDRED_THOUSAND
+    place = RADIX * RADIX
+    block = THOUSAND_SPAN
+    ten = cache["ten"]
+    gauges = cache["gauges"]
+    hundred = cache["hundred"]
+    thousand = cache["thousand"]
+    ten_thousand = cache["ten_thousand"]
+    right_q_of = cache["right_q"]
+    right_alg_of = cache["right_alg"]
+    consensus = cache["consensus"]
+    read = cache["read"]
+    plus = cache["plus"]
+    nine = 0.0
+    for _ in range(RADIX - 1):
+        nine = consensus(nine, ten_thousand, plus)
+    hundred_thousand = consensus(nine, ten_thousand, plus)
+    ten_alg = lattice._gauge(9, surface) + lattice._gauge(1, surface)
+    ten_thousand_alg = (RADIX ** 3) * ten_alg
+    nine_alg = (RADIX - 1) * ten_thousand_alg
+    left_q = [0.0] * span
+    left_alg = [0.0] * span
+    for rest in range(1, span):
+        left_q[rest] = consensus(nine, right_q_of[rest], plus)
+        left_alg[rest] = nine_alg + right_alg_of[rest]
+    reader = _bound_reader(gauges, ten, hundred, thousand, ten_thousand, hundred_thousand)
+    names = (
+        "train",
+        "hold",
+        "closed",
+        "ones",
+        "place",
+        "block",
+        "thou",
+        "ten",
+        "hundred",
+        "thousand",
+        "mark",
+        "carry",
+        "low",
+        "high",
+    )
+    buckets = {name: _blank_running() for name in names}
+    note = _note_running
+    seen = 0
+    high_cut = cap + span - place
+    for left in range(cap - span + 1, cap):
+        rest = left - (cap - span)
+        left_q_row = left_q[rest]
+        left_alg_row = left_alg[rest]
+        left_mod = left % RADIX
+        for right in range(cap - left, span):
+            result = left + right
+            kind = 0 if right < RADIX else 1 if right < place else 2 if right < block else 3
+            right_q = right_q_of[right]
+            right_alg = right_alg_of[right]
+            got = reader(left_q_row, right_q, plus) if reader is not None else None
+            if got is None:
+                quantity = consensus(left_q_row, right_q, plus)
+                named, remainder, margin, dist = read(
+                    quantity, surface, ten, gauges, hundred, thousand, ten_thousand, hundred_thousand
+                )
+            else:
+                quantity, named, remainder, margin, dist = got
+            ok = named == result
+            gap = abs(quantity - (left_alg_row + right_alg))
+            exact = result % RADIX == 0
+            miss = None
+            if not ok:
+                want = decimal_name(result) if surface == "digit" else number_name(result)
+                spelled = _hund_thou_spell(named, surface)
+                if surface == "digit":
+                    shown = f"{decimal_name(left)}+{decimal_name(right)}={decimal_name(result)}"
+                else:
+                    right_word = WORD_OF[right] if right < RADIX else number_name(right)
+                    shown = f"what is {number_name(left)} plus {right_word}"
+                miss = f"{shown} -> {spelled} (want {want})"
+            held = (left * 3 + right * 4 + 6 * kind) % 5 == 0
+            note(buckets["closed"], ok, gap, margin, dist, remainder, exact, miss)
+            note(buckets["hold" if held else "train"], ok, gap, margin, dist, remainder, exact, miss)
+            if kind == 0:
+                note(buckets["ones"], ok, gap, margin, dist, remainder, exact, miss)
+            elif kind == 1:
+                note(buckets["place"], ok, gap, margin, dist, remainder, exact, miss)
+            elif kind == 2:
+                note(buckets["block"], ok, gap, margin, dist, remainder, exact, miss)
+            else:
+                note(buckets["thou"], ok, gap, margin, dist, remainder, exact, miss)
+            if exact:
+                note(buckets["ten"], ok, gap, margin, dist, remainder, True, miss)
+            if result % place == 0:
+                note(buckets["hundred"], ok, gap, margin, dist, remainder, True, miss)
+            if result % block == 0:
+                note(buckets["thousand"], ok, gap, margin, dist, remainder, True, miss)
+            if result % span == 0:
+                note(buckets["mark"], ok, gap, margin, dist, remainder, True, miss)
+            if left_mod + right % RADIX >= RADIX:
+                note(buckets["carry"], ok, gap, margin, dist, remainder, exact, miss)
+            if result < cap + RADIX:
+                note(buckets["low"], ok, gap, margin, dist, remainder, exact, miss)
+            if result >= high_cut:
+                note(buckets["high"], ok, gap, margin, dist, remainder, exact, miss)
+            seen += 1
+            if seen % 500000 == 0:
+                elapsed = time.perf_counter() - started
+                print(f"hundred thousand {surface} {seen} {elapsed:.0f}s", flush=True)
+    print(f"hundred thousand {surface} done", flush=True)
+    if seen != counts["n"] or buckets["train"]["n"] != counts["train"] or buckets["hold"]["n"] != counts["hold"]:
+        raise RuntimeError(
+            f"hundred thousand {surface} scored {seen} "
+            f"({buckets['train']['n']}/{buckets['hold']['n']}) of {counts['n']}"
+        )
+    for key in (
+        "ones",
+        "place",
+        "block",
+        "thou",
+        "ten",
+        "hundred",
+        "thousand",
+        "mark",
+        "carry",
+        "low",
+        "high",
+    ):
+        if buckets[key]["n"] != counts[key]:
+            raise RuntimeError(f"hundred thousand {surface} {key} scored {buckets[key]['n']}")
+    return {name: _finish_running(bucket) for name, bucket in buckets.items()}
+
+
 def score_generated(lattice: Lattice) -> dict:
     """Score every generated family on both surfaces. Gauges stay frozen."""
     order_train, order_hold = split_claims()
@@ -3376,6 +4074,8 @@ def score_generated(lattice: Lattice) -> dict:
     thou_pair_counts = census_thousand_pairs()
     ten_thou_counts = census_ten_thousand_sums()
     ten_thou_op_counts = census_ten_thousand_ops()
+    ten_thou_pair_counts = census_ten_thousand_pairs()
+    hund_thou_counts = census_hundred_thousand_sums()
     products = all_products()
     spans = all_spans()
     lexemes = all_lexemes()
@@ -3522,6 +4222,35 @@ def score_generated(lattice: Lattice) -> dict:
         "ten_thou_op_high_n": ten_thou_op_counts["high"],
         "ten_thou_op_right9000_n": ten_thou_op_counts["right9000"],
         "ten_thou_op_top_n": ten_thou_op_counts["top"],
+        "ten_thou_pair_count": ten_thou_pair_counts["n"],
+        "ten_thou_pair_train_count": ten_thou_pair_counts["train"],
+        "ten_thou_pair_hold_count": ten_thou_pair_counts["hold"],
+        "ten_thou_pair_zero_n": ten_thou_pair_counts["zero"],
+        "ten_thou_pair_borrow_n": ten_thou_pair_counts["borrow"],
+        "ten_thou_pair_noborrow_n": ten_thou_pair_counts["noborrow"],
+        "ten_thou_pair_ten_n": ten_thou_pair_counts["ten"],
+        "ten_thou_pair_hundred_n": ten_thou_pair_counts["hundred"],
+        "ten_thou_pair_ones_n": ten_thou_pair_counts["ones"],
+        "ten_thou_pair_place_n": ten_thou_pair_counts["place"],
+        "ten_thou_pair_block_n": ten_thou_pair_counts["block"],
+        "ten_thou_pair_low_n": ten_thou_pair_counts["low"],
+        "ten_thou_pair_high_n": ten_thou_pair_counts["high"],
+        "ten_thou_pair_righthigh_n": ten_thou_pair_counts["righthigh"],
+        "ten_thou_pair_top_n": ten_thou_pair_counts["top"],
+        "hund_thou_count": hund_thou_counts["n"],
+        "hund_thou_train_count": hund_thou_counts["train"],
+        "hund_thou_hold_count": hund_thou_counts["hold"],
+        "hund_thou_ones_n": hund_thou_counts["ones"],
+        "hund_thou_place_n": hund_thou_counts["place"],
+        "hund_thou_block_n": hund_thou_counts["block"],
+        "hund_thou_thou_n": hund_thou_counts["thou"],
+        "hund_thou_ten_n": hund_thou_counts["ten"],
+        "hund_thou_hundred_n": hund_thou_counts["hundred"],
+        "hund_thou_thousand_n": hund_thou_counts["thousand"],
+        "hund_thou_mark_n": hund_thou_counts["mark"],
+        "hund_thou_carry_n": hund_thou_counts["carry"],
+        "hund_thou_low_n": hund_thou_counts["low"],
+        "hund_thou_high_n": hund_thou_counts["high"],
     }
     for surface in ("digit", "word"):
         report[f"order_{surface}_train"] = _order_block(lattice, order_train, surface)
@@ -3569,6 +4298,10 @@ def score_generated(lattice: Lattice) -> dict:
         for name, block in blocks.items():
             report[f"ten_thou_op_{surface}_{name}"] = block
         report[f"ten_thou_op_round_{surface}"] = rounded
+        for name, block in _score_ten_thou_pairs(lattice, surface, ten_thou_pair_counts).items():
+            report[f"ten_thou_pair_{surface}_{name}"] = block
+        for name, block in _score_hundred_thousands(lattice, surface, hund_thou_counts).items():
+            report[f"hund_thou_{surface}_{name}"] = block
     report["demos"] = _demos(lattice)
     report["ok"] = generated_ok(report)
     return report
@@ -3589,7 +4322,7 @@ def _lexeme_ok(block: dict) -> bool:
 
 
 def generated_ok(report: dict) -> bool:
-    """Exact order, product, third step, place names, place pairs, hundreds, hundred operands, thousands, thousand operands, thousand pairs, ten-thousand sums, and ten-thousand operands."""
+    """Exact order, product, third step, place names, place pairs, hundreds, hundred operands, thousands, thousand operands, thousand pairs, ten-thousand sums, ten-thousand operands, ten-thousand differences, and hundred-thousand sums."""
     for surface in ("digit", "word"):
         order_hold = report[f"order_{surface}_hold"]
         order_train = report[f"order_{surface}_train"]
@@ -3715,6 +4448,42 @@ def generated_ok(report: dict) -> bool:
                 return False
         if not _round_ok(report[f"ten_thou_op_round_{surface}"]):
             return False
+        for split in (
+            "train",
+            "hold",
+            "closed",
+            "zero",
+            "borrow",
+            "ten",
+            "hundred",
+            "ones",
+            "place",
+            "block",
+            "low",
+            "high",
+            "righthigh",
+            "top",
+        ):
+            if not _lexeme_ok(report[f"ten_thou_pair_{surface}_{split}"]):
+                return False
+        for split in (
+            "train",
+            "hold",
+            "closed",
+            "ones",
+            "place",
+            "block",
+            "thou",
+            "ten",
+            "hundred",
+            "thousand",
+            "mark",
+            "carry",
+            "low",
+            "high",
+        ):
+            if not _lexeme_ok(report[f"hund_thou_{surface}_{split}"]):
+                return False
     return True
 
 
@@ -3863,6 +4632,25 @@ def _demos(lattice: Lattice) -> list[dict]:
         TenThousandOp(10999, "+", 0, 10999),
         TenThousandOp(10999, "-", 9, 10990),
         TenThousandOp(10999, "-", 999, 10000),
+    )
+    ten_thou_pairs = (
+        TenThousandPair(10000, 10000, 0),
+        TenThousandPair(10001, 10000, 1),
+        TenThousandPair(10024, 10000, 24),
+        TenThousandPair(10050, 10000, 50),
+        TenThousandPair(10100, 10050, 50),
+        TenThousandPair(10500, 10000, 500),
+        TenThousandPair(10999, 10000, 999),
+        TenThousandPair(10999, 10990, 9),
+        TenThousandPair(10999, 10999, 0),
+    )
+    hund_thousands = (
+        HundredThousandSum("digit", 99999, 1, 100000),
+        HundredThousandSum("thou", 90001, 9999, 100000),
+        HundredThousandSum("thou", 99000, 2000, 101000),
+        HundredThousandSum("block", 99500, 500, 100000),
+        HundredThousandSum("thou", 98000, 2500, 100500),
+        HundredThousandSum("thou", 99999, 9999, 109998),
     )
     demos = []
     for claim in claims:
@@ -4016,6 +4804,30 @@ def _demos(lattice: Lattice) -> list[dict]:
                 "digit_want": row.digit_answer(),
                 "digit_got": lattice.predict_ten_thousand_op(row, "digit"),
                 "word_got": lattice.predict_ten_thousand_op(row, "word"),
+            }
+        )
+    for row in ten_thou_pairs:
+        demos.append(
+            {
+                "family": "tenpair",
+                "digit": f"{row.digit_prompt()}{row.digit_answer()}",
+                "word": row.word_prompt(),
+                "want": row.word_answer(),
+                "digit_want": row.digit_answer(),
+                "digit_got": lattice.predict_ten_thousand_pair(row, "digit"),
+                "word_got": lattice.predict_ten_thousand_pair(row, "word"),
+            }
+        )
+    for row in hund_thousands:
+        demos.append(
+            {
+                "family": "hundthou",
+                "digit": f"{row.digit_prompt()}{row.digit_answer()}",
+                "word": row.word_prompt(),
+                "want": row.word_answer(),
+                "digit_want": row.digit_answer(),
+                "digit_got": lattice.predict_hundred_thousand(row, "digit"),
+                "word_got": lattice.predict_hundred_thousand(row, "word"),
             }
         )
     return demos

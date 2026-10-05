@@ -554,6 +554,8 @@ def run() -> dict:
         f"thoupair {applied['thou_pair_digit_hold']['acc']:.3f}  "
         f"tenthous {applied['ten_thou_digit_hold']['acc']:.3f}  "
         f"tenop {applied['ten_thou_op_digit_hold']['acc']:.3f}  "
+        f"tenpair {applied['ten_thou_pair_digit_hold']['acc']:.3f}  "
+        f"hundthou {applied['hund_thou_digit_hold']['acc']:.3f}  "
         f"bonds {int(bond_meta['kept_bonds'])}  confidence {confidence:.3f}  "
         f"wall {time.perf_counter() - started:.2f}s",
         flush=True,

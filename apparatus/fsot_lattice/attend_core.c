@@ -231,6 +231,7 @@ EXPORT void fsot_read_place(
     double hundred,
     double thousand,
     double ten_thousand,
+    double hundred_thousand,
     const double *plus,
     const double *minus,
     int width,
@@ -244,6 +245,7 @@ EXPORT void fsot_read_place(
     double *dist
 ) {
     int cap = n > 0 ? n - 1 : 0;
+    int hundred_thousands;
     int ten_thousands;
     int thousands;
     int hundreds;
@@ -251,6 +253,9 @@ EXPORT void fsot_read_place(
     int units = 0;
     double margin_v = 0.0;
     double dist_v = 0.0;
+    hundred_thousands = shed(
+        &quantity, hundred_thousand, cap, minus_sign, plus, minus, width, collapse, gate, drop
+    );
     ten_thousands = shed(
         &quantity, ten_thousand, cap, minus_sign, plus, minus, width, collapse, gate, drop
     );
@@ -265,7 +270,7 @@ EXPORT void fsot_read_place(
         nearest_detail(quantity, gauges, n, &units, &margin_v, &dist_v);
     }
     if (named != NULL) {
-        *named = (((ten_thousands * n + thousands) * n + hundreds) * n + tens) * n + units;
+        *named = (((((hundred_thousands * n + ten_thousands) * n + thousands) * n + hundreds) * n + tens) * n + units);
     }
     if (remainder != NULL) {
         *remainder = quantity;
@@ -275,5 +280,149 @@ EXPORT void fsot_read_place(
     }
     if (dist != NULL) {
         *dist = dist_v;
+    }
+}
+
+/* Repeated consensus on one vessel. Same order as Lattice.fold_steps. */
+EXPORT double fsot_fold_steps(
+    double left,
+    const int *signs,
+    const double *rights,
+    int n,
+    const double *plus,
+    const double *minus,
+    int width,
+    double collapse,
+    double gate
+) {
+    double acc = left;
+    int i;
+    if (n <= 0 || signs == NULL || rights == NULL) {
+        return left;
+    }
+    for (i = 0; i < n; i++) {
+        acc = fsot_consensus_quantity(
+            acc, rights[i], signs[i], plus, minus, width, collapse, gate
+        );
+    }
+    return acc;
+}
+
+/* Gauges and place steps for one surface. The per-call attend stays unchanged. */
+static int g_bound = 0;
+static int g_width = 0;
+static int g_n = 0;
+static int g_minus_sign = -1;
+static double g_collapse = 0.0;
+static double g_gate = 0.0;
+static double g_drop = 0.0;
+static double g_ten = 0.0;
+static double g_hundred = 0.0;
+static double g_thousand = 0.0;
+static double g_ten_thousand = 0.0;
+static double g_hundred_thousand = 0.0;
+static double g_plus[64];
+static double g_minus[64];
+static double g_gauges[16];
+
+EXPORT int fsot_bind_read(
+    const double *gauges,
+    int n,
+    double ten,
+    double hundred,
+    double thousand,
+    double ten_thousand,
+    double hundred_thousand,
+    const double *plus,
+    const double *minus,
+    int width,
+    double collapse,
+    double gate,
+    double drop,
+    int minus_sign
+) {
+    int i;
+    g_bound = 0;
+    if (gauges == NULL || plus == NULL || minus == NULL) {
+        return 0;
+    }
+    if (n <= 0 || n > 16 || width <= 0 || width > 64) {
+        return 0;
+    }
+    for (i = 0; i < n; i++) {
+        g_gauges[i] = gauges[i];
+    }
+    for (i = 0; i < width; i++) {
+        g_plus[i] = plus[i];
+        g_minus[i] = minus[i];
+    }
+    g_n = n;
+    g_width = width;
+    g_ten = ten;
+    g_hundred = hundred;
+    g_thousand = thousand;
+    g_ten_thousand = ten_thousand;
+    g_hundred_thousand = hundred_thousand;
+    g_collapse = collapse;
+    g_gate = gate;
+    g_drop = drop;
+    g_minus_sign = minus_sign;
+    g_bound = 1;
+    return 1;
+}
+
+/* One crossing: consensus, then the place read, on the bound surface. */
+EXPORT void fsot_consensus_read(
+    double left,
+    double right,
+    int sign,
+    double *quantity,
+    int *named,
+    double *remainder,
+    double *margin,
+    double *dist
+) {
+    double value = 0.0;
+    if (g_bound) {
+        value = fsot_consensus_quantity(
+            left, right, sign, g_plus, g_minus, g_width, g_collapse, g_gate
+        );
+        fsot_read_place(
+            value,
+            g_gauges,
+            g_n,
+            g_ten,
+            g_hundred,
+            g_thousand,
+            g_ten_thousand,
+            g_hundred_thousand,
+            g_plus,
+            g_minus,
+            g_width,
+            g_collapse,
+            g_gate,
+            g_drop,
+            g_minus_sign,
+            named,
+            remainder,
+            margin,
+            dist
+        );
+    } else {
+        if (named != NULL) {
+            *named = 0;
+        }
+        if (remainder != NULL) {
+            *remainder = 0.0;
+        }
+        if (margin != NULL) {
+            *margin = 0.0;
+        }
+        if (dist != NULL) {
+            *dist = 0.0;
+        }
+    }
+    if (quantity != NULL) {
+        *quantity = value;
     }
 }

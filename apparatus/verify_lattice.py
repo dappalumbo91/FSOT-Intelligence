@@ -90,6 +90,8 @@ def check_package(pin: str) -> list[str]:
     for surface in SURFACES:
         for bucket in BUCKETS:
             _exact(applied, f"ten_thou_op_{surface}_{bucket}", issues)
+            _exact(applied, f"ten_thou_pair_{surface}_{bucket}", issues)
+            _exact(applied, f"hund_thou_{surface}_{bucket}", issues)
     print(
         f"package promoted={report.get('promoted')} pin={str(report.get('pin'))[:12]} "
         f"width={report.get('width')} learned={report.get('learned_parameters')} "
@@ -113,10 +115,12 @@ def _place_grid(lattice: Lattice) -> list[int]:
     hundred = lattice.hundred_quantity("digit")
     thousand = lattice.thousand_quantity("digit")
     ten_thousand = lattice.ten_thousand_quantity("digit")
+    hundred_thousand = lattice.hundred_thousand_quantity("digit")
     gauges = [lattice.digit_value[str(digit)] for digit in range(10)]
     named: list[int] = []
     for quantity in (ten, hundred, thousand, ten_thousand):
         named.append(lattice.read_place(quantity, "digit", ten, gauges, hundred, thousand, ten_thousand)[0])
+    named.append(lattice.read_place(hundred_thousand, "digit")[0])
     for left in gauges:
         for right in gauges[::3]:
             total = lattice.consensus_quantity(left, right, 1)
@@ -151,9 +155,54 @@ def check_attend(lattice: Lattice) -> list[str]:
     name_misses = sum(py_name != c_name for py_name, c_name in zip(python_names, c_names))
     if name_misses:
         issues.append(f"place names differed on {name_misses} reads")
+    fast_attend.set_enabled(False)
+    ten = lattice.ten_quantity("digit")
+    gauges = [lattice.digit_value[str(digit)] for digit in range(10)]
+    py_fold = lattice.fold_steps(0.0, [(1, ten)] * 10)
+    py_signed = lattice.fold_steps(gauges[9], [(1, ten), (-1, gauges[3])])
+    fast_attend.set_enabled(True)
+    if not fast_attend.enabled():
+        return ["compiled attend did not load for the fold"]
+    c_fold = lattice.fold_steps(0.0, [(1, ten)] * 10)
+    c_signed = lattice.fold_steps(gauges[9], [(1, ten), (-1, gauges[3])])
+    fold_gap = max(abs(py_fold - c_fold), abs(py_signed - c_signed))
+    if fold_gap >= PARITY_GAP:
+        issues.append(f"fold gap {fold_gap}")
+    hundred = lattice.hundred_quantity("digit")
+    thousand = lattice.thousand_quantity("digit")
+    ten_thousand = lattice.ten_thousand_quantity("digit")
+    read_gap = 0.0
+    read_misses = 0
+    if not fast_attend.bind_read(gauges, ten, hundred, thousand, ten_thousand):
+        issues.append("compiled attend did not bind the place read")
+    else:
+        read_gap = 0.0
+        read_misses = 0
+        for left in gauges[::3]:
+            for right in gauges[::3]:
+                for sign in (1, -1):
+                    quantity = lattice.consensus_quantity(left, right, sign)
+                    named, _rem, _margin, _dist = lattice.read_place(
+                        quantity, "digit", ten, gauges, hundred, thousand, ten_thousand
+                    )
+                    combined = fast_attend.consensus_read(left, right, sign)
+                    if combined is None:
+                        issues.append("bound consensus read returned nothing")
+                        break
+                    c_quantity, c_named, _c_rem, _c_margin, _c_dist = combined
+                    gap = abs(quantity - c_quantity)
+                    if gap > read_gap:
+                        read_gap = gap
+                    if named != c_named:
+                        read_misses += 1
+        if read_gap >= PARITY_GAP:
+            issues.append(f"bound read gap {read_gap}")
+        if read_misses:
+            issues.append(f"bound read names differed on {read_misses} rows")
     print(
         f"attend rows={len(c_consensus)} names={len(c_names)} "
-        f"worst_gap={worst:.3e} name_misses={name_misses}"
+        f"worst_gap={worst:.3e} name_misses={name_misses} "
+        f"fold_gap={fold_gap:.3e} bound_gap={read_gap:.3e} bound_misses={read_misses}"
     )
     return issues
 

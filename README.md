@@ -10,12 +10,14 @@ The law is S = K(T1 + T2 + T3), taken from the live engine in
 10 digit gauges, 10 number-word gauges, and 1920 bonds.
 
 The scored read is a consensus attend on two orthogonal carriers. That attend
-is C, in `apparatus/fsot_lattice/attend_core.c`. Training, the English
-spellings, the census, and the promotion gate stay Python, and they call the
-C attend for every scored row. GitHub's language share follows those Python
-lines, including the pinned engine `vendor/fsot_compute.py`. The same gauges
-name closed arithmetic from a single digit through a ten-thousand name used
-as an operand. The score writeup is [apparatus/README.md](apparatus/README.md).
+is C, in `apparatus/fsot_lattice/attend_core.c`: the quantity, the place
+read, a repeated-addition fold, and one call that does the quantity and the
+place read together. Training, the English spellings, the census, and the
+promotion gate stay Python, and they call the C attend for every scored row.
+GitHub's language share follows those Python lines, including the pinned
+engine `vendor/fsot_compute.py`. The same gauges name closed arithmetic from
+a single digit through the sums that leave 0..99999. The score
+writeup is [apparatus/README.md](apparatus/README.md).
 
 ## Verify
 
@@ -24,9 +26,8 @@ python apparatus\verify_lattice.py
 ```
 
 That check re-reads the promoted package, rebuilds nothing in the gauges, and
-requires the C attend to name the same cells as the Python attend. The hub
-runner in FSOT-2.1-Lean reaches the same script through
-`scripts/verify_fsot_intelligence_lattice.py` when this folder sits beside it.
+requires the C attend to name the same cells as the Python attend. The check
+lives in this repository. CI builds the C attend and runs it.
 
 ## Run
 
@@ -36,7 +37,8 @@ python apparatus\run_lattice.py
 ```
 
 A full promotion re-scores the closed package. The run that promoted this
-package finished in 2837.33 seconds. The compiled attend is
+package finished in 3382.35 seconds. The earlier compiled package, the
+ten-thousand difference, finished in 1980.31 seconds. The compiled attend is
 `apparatus/fsot_lattice/attend_core.c`. Build it beside the Python file and
 the loader uses it. A missing library leaves the Python attend in place, and
 that path names the same cells.

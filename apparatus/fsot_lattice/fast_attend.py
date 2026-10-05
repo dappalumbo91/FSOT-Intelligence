@@ -11,6 +11,8 @@ from pathlib import Path
 
 _LIB = None
 _READY = False
+_EXTRA = False
+_READ_BOUND = False
 _ENABLED = True
 _PLUS = None
 _MINUS = None
@@ -22,7 +24,7 @@ _WIDTH = 0
 
 
 def _load():
-    global _LIB
+    global _LIB, _EXTRA
     if _LIB is not None:
         return _LIB
     path = None
@@ -53,6 +55,7 @@ def _load():
         ctypes.c_double,
         ctypes.c_double,
         ctypes.c_double,
+        ctypes.c_double,
         ctypes.POINTER(ctypes.c_double),
         ctypes.POINTER(ctypes.c_double),
         ctypes.c_int,
@@ -66,6 +69,50 @@ def _load():
         ctypes.POINTER(ctypes.c_double),
     ]
     lib.fsot_read_place.restype = None
+    try:
+        lib.fsot_fold_steps.argtypes = [
+            ctypes.c_double,
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_int,
+            ctypes.c_double,
+            ctypes.c_double,
+        ]
+        lib.fsot_fold_steps.restype = ctypes.c_double
+        lib.fsot_bind_read.argtypes = [
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_int,
+            ctypes.c_double,
+            ctypes.c_double,
+            ctypes.c_double,
+            ctypes.c_double,
+            ctypes.c_double,
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_int,
+            ctypes.c_double,
+            ctypes.c_double,
+            ctypes.c_double,
+            ctypes.c_int,
+        ]
+        lib.fsot_bind_read.restype = ctypes.c_int
+        lib.fsot_consensus_read.argtypes = [
+            ctypes.c_double,
+            ctypes.c_double,
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+        ]
+        lib.fsot_consensus_read.restype = None
+        _EXTRA = True
+    except AttributeError:
+        _EXTRA = False
     _LIB = lib
     return lib
 
@@ -142,6 +189,7 @@ def read_place(
     hundred: float,
     thousand: float,
     ten_thousand: float,
+    hundred_thousand: float,
 ) -> tuple[int, float, float, float] | None:
     if not enabled() or _LIB is None or _PLUS is None or _MINUS is None:
         return None
@@ -159,6 +207,7 @@ def read_place(
         float(hundred),
         float(thousand),
         float(ten_thousand),
+        float(hundred_thousand),
         _PLUS,
         _MINUS,
         _WIDTH,
@@ -172,3 +221,94 @@ def read_place(
         ctypes.byref(dist),
     )
     return int(named.value), float(remainder.value), float(margin.value), float(dist.value)
+
+
+def fold_steps(left: float, steps: list[tuple[int, float]]) -> float | None:
+    """One call for a chain of consensus steps. A missing symbol keeps the Python loop."""
+    if not enabled() or not _EXTRA or _LIB is None or _PLUS is None or _MINUS is None:
+        return None
+    n = len(steps)
+    if n == 0:
+        return float(left)
+    signs = (ctypes.c_int * n)(*(int(sign) for sign, _right in steps))
+    rights = (ctypes.c_double * n)(*(float(right) for _sign, right in steps))
+    return float(
+        _LIB.fsot_fold_steps(
+            float(left),
+            signs,
+            rights,
+            n,
+            _PLUS,
+            _MINUS,
+            _WIDTH,
+            _COLLAPSE,
+            _GATE,
+        )
+    )
+
+
+def bind_read(
+    gauges: list[float],
+    ten: float,
+    hundred: float,
+    thousand: float,
+    ten_thousand: float,
+    hundred_thousand: float | None = None,
+) -> bool:
+    """Copy one surface into the attend. Later rows skip the gauge copy."""
+    global _READ_BOUND
+    _READ_BOUND = False
+    if not enabled() or not _EXTRA or _LIB is None or _PLUS is None or _MINUS is None:
+        return False
+    n = len(gauges)
+    if n <= 0 or n > 16:
+        return False
+    if hundred_thousand is None:
+        hundred_thousand = float(ten_thousand) * n
+    buf = (ctypes.c_double * n)(*gauges)
+    ok = _LIB.fsot_bind_read(
+        buf,
+        n,
+        float(ten),
+        float(hundred),
+        float(thousand),
+        float(ten_thousand),
+        float(hundred_thousand),
+        _PLUS,
+        _MINUS,
+        _WIDTH,
+        _COLLAPSE,
+        _GATE,
+        _DROP,
+        _MINUS_SIGN,
+    )
+    _READ_BOUND = bool(ok)
+    return _READ_BOUND
+
+
+def consensus_read(left: float, right: float, sign: int):
+    """Consensus and the place read in one call. None keeps the two Python crossings."""
+    if not _READ_BOUND or not enabled() or not _EXTRA or _LIB is None:
+        return None
+    quantity = ctypes.c_double()
+    named = ctypes.c_int()
+    remainder = ctypes.c_double()
+    margin = ctypes.c_double()
+    dist = ctypes.c_double()
+    _LIB.fsot_consensus_read(
+        float(left),
+        float(right),
+        int(sign),
+        ctypes.byref(quantity),
+        ctypes.byref(named),
+        ctypes.byref(remainder),
+        ctypes.byref(margin),
+        ctypes.byref(dist),
+    )
+    return (
+        float(quantity.value),
+        int(named.value),
+        float(remainder.value),
+        float(margin.value),
+        float(dist.value),
+    )
