@@ -232,6 +232,7 @@ EXPORT void fsot_read_place(
     double thousand,
     double ten_thousand,
     double hundred_thousand,
+    double million,
     const double *plus,
     const double *minus,
     int width,
@@ -245,6 +246,7 @@ EXPORT void fsot_read_place(
     double *dist
 ) {
     int cap = n > 0 ? n - 1 : 0;
+    int millions;
     int hundred_thousands;
     int ten_thousands;
     int thousands;
@@ -253,6 +255,9 @@ EXPORT void fsot_read_place(
     int units = 0;
     double margin_v = 0.0;
     double dist_v = 0.0;
+    millions = shed(
+        &quantity, million, cap, minus_sign, plus, minus, width, collapse, gate, drop
+    );
     hundred_thousands = shed(
         &quantity, hundred_thousand, cap, minus_sign, plus, minus, width, collapse, gate, drop
     );
@@ -270,7 +275,7 @@ EXPORT void fsot_read_place(
         nearest_detail(quantity, gauges, n, &units, &margin_v, &dist_v);
     }
     if (named != NULL) {
-        *named = (((((hundred_thousands * n + ten_thousands) * n + thousands) * n + hundreds) * n + tens) * n + units);
+        *named = ((((((millions * n + hundred_thousands) * n + ten_thousands) * n + thousands) * n + hundreds) * n + tens) * n + units);
     }
     if (remainder != NULL) {
         *remainder = quantity;
@@ -321,6 +326,7 @@ static double g_hundred = 0.0;
 static double g_thousand = 0.0;
 static double g_ten_thousand = 0.0;
 static double g_hundred_thousand = 0.0;
+static double g_million = 0.0;
 static double g_plus[64];
 static double g_minus[64];
 static double g_gauges[16];
@@ -333,6 +339,7 @@ EXPORT int fsot_bind_read(
     double thousand,
     double ten_thousand,
     double hundred_thousand,
+    double million,
     const double *plus,
     const double *minus,
     int width,
@@ -363,6 +370,7 @@ EXPORT int fsot_bind_read(
     g_thousand = thousand;
     g_ten_thousand = ten_thousand;
     g_hundred_thousand = hundred_thousand;
+    g_million = million;
     g_collapse = collapse;
     g_gate = gate;
     g_drop = drop;
@@ -396,6 +404,7 @@ EXPORT void fsot_consensus_read(
             g_thousand,
             g_ten_thousand,
             g_hundred_thousand,
+            g_million,
             g_plus,
             g_minus,
             g_width,

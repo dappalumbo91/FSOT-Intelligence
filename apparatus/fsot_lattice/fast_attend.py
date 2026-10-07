@@ -56,6 +56,7 @@ def _load():
         ctypes.c_double,
         ctypes.c_double,
         ctypes.c_double,
+        ctypes.c_double,
         ctypes.POINTER(ctypes.c_double),
         ctypes.POINTER(ctypes.c_double),
         ctypes.c_int,
@@ -85,6 +86,7 @@ def _load():
         lib.fsot_bind_read.argtypes = [
             ctypes.POINTER(ctypes.c_double),
             ctypes.c_int,
+            ctypes.c_double,
             ctypes.c_double,
             ctypes.c_double,
             ctypes.c_double,
@@ -190,6 +192,7 @@ def read_place(
     thousand: float,
     ten_thousand: float,
     hundred_thousand: float,
+    million: float,
 ) -> tuple[int, float, float, float] | None:
     if not enabled() or _LIB is None or _PLUS is None or _MINUS is None:
         return None
@@ -208,6 +211,7 @@ def read_place(
         float(thousand),
         float(ten_thousand),
         float(hundred_thousand),
+        float(million),
         _PLUS,
         _MINUS,
         _WIDTH,
@@ -254,6 +258,7 @@ def bind_read(
     thousand: float,
     ten_thousand: float,
     hundred_thousand: float | None = None,
+    million: float | None = None,
 ) -> bool:
     """Copy one surface into the attend. Later rows skip the gauge copy."""
     global _READ_BOUND
@@ -265,6 +270,8 @@ def bind_read(
         return False
     if hundred_thousand is None:
         hundred_thousand = float(ten_thousand) * n
+    if million is None:
+        million = float(hundred_thousand) * n
     buf = (ctypes.c_double * n)(*gauges)
     ok = _LIB.fsot_bind_read(
         buf,
@@ -274,6 +281,7 @@ def bind_read(
         float(thousand),
         float(ten_thousand),
         float(hundred_thousand),
+        float(million),
         _PLUS,
         _MINUS,
         _WIDTH,

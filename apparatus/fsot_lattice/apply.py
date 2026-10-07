@@ -8,8 +8,8 @@ operand, sums that leave 0..999, a thousand name used as an
 operand, two thousand names in one expression, sums that leave
 0..9999, a ten-thousand name used as an operand whose result
 stays inside 0..10999, two ten-thousand names whose difference
-stays inside 0..999, and sums that leave 0..99999 are produced here
-and scored together. They add no gauges.
+stays inside 0..999, sums that leave 0..99999, and sums that leave
+0..999999 are produced here and scored together. They add no gauges.
 """
 
 from __future__ import annotations
@@ -23,6 +23,8 @@ from fsot_lattice.tasks import (
     RADIX,
     HUNDRED_THOUSAND,
     HUNDRED_THOUSAND_CAP,
+    MILLION,
+    MILLION_CAP,
     TEN_THOUSAND_CAP,
     THOUSAND_CAP,
     THOUSAND_SPAN,
@@ -31,6 +33,7 @@ from fsot_lattice.tasks import (
     HundredOp,
     HundredSum,
     HundredThousandSum,
+    MillionSum,
     Lexeme,
     TenThousandOp,
     TenThousandPair,
@@ -47,6 +50,7 @@ from fsot_lattice.tasks import (
     all_lexemes,
     all_thousand_sums,
     census_hundred_thousand_sums,
+    census_million_sums,
     census_ten_thousand_ops,
     census_ten_thousand_pairs,
     census_ten_thousand_sums,
@@ -68,6 +72,7 @@ from fsot_lattice.tasks import (
     split_thousand_sums,
     hundred_thousand_held,
     hundred_thousand_kind,
+    million_kind,
     ten_thousand_held,
     ten_thousand_kind,
     ten_thousand_op_held,
@@ -135,6 +140,7 @@ def check_generated(lattice: Lattice) -> None:
     _check_ten_thou_ops(lattice)
     _check_ten_thou_pairs(lattice)
     _check_hundred_thousands(lattice)
+    _check_millions(lattice)
 
 
 def _check_lexicon(lattice: Lattice) -> None:
@@ -701,8 +707,12 @@ def _check_thousands(lattice: Lattice) -> None:
             raise RuntimeError(f"{number} spelled {got}")
     if number_name(10000) != "ten thousand":
         raise RuntimeError("ten thousand left the spelling table")
-    if number_name(11000) != "eleven thousand" or number_name(110000) != "?":
-        raise RuntimeError("the spelling table left eleven thousand or passed one hundred ten thousand")
+    if (
+        number_name(11000) != "eleven thousand"
+        or number_name(110000) != "one hundred ten thousand"
+        or number_name(1100000) != "?"
+    ):
+        raise RuntimeError("the spelling table left eleven thousand or passed one million ninety-nine thousand")
     if decimal_name(1000) != "1000":
         raise RuntimeError("the decimal thousand left the integer")
     step = K
@@ -1206,8 +1216,12 @@ def _check_thou_pairs(lattice: Lattice) -> None:
     """
     if number_name(10000) != "ten thousand":
         raise RuntimeError("ten thousand left the spelling table")
-    if number_name(11000) != "eleven thousand" or number_name(110000) != "?":
-        raise RuntimeError("the spelling table left eleven thousand or passed one hundred ten thousand")
+    if (
+        number_name(11000) != "eleven thousand"
+        or number_name(110000) != "one hundred ten thousand"
+        or number_name(1100000) != "?"
+    ):
+        raise RuntimeError("the spelling table left eleven thousand or passed one million ninety-nine thousand")
     if number_name(0) != "zero":
         raise RuntimeError("a cancelled thousand pair lost the word zero")
     spells = (
@@ -1471,8 +1485,8 @@ def _check_ten_thousands(lattice: Lattice) -> None:
             raise RuntimeError(f"{number} spelled {got}")
     if number_name(11000) != "eleven thousand" or number_name(12000) != "twelve thousand":
         raise RuntimeError("eleven thousand or twelve thousand left the spelling table")
-    if number_name(110000) != "?":
-        raise RuntimeError("a name past one hundred nine thousand nine hundred ninety-nine entered the table")
+    if number_name(110000) != "one hundred ten thousand" or number_name(1100000) != "?":
+        raise RuntimeError("a name past one million ninety-nine thousand nine hundred ninety-nine entered the table")
     if decimal_name(10000) != "10000":
         raise RuntimeError("the decimal ten thousand left the integer")
     counts = census_ten_thousand_sums()
@@ -1652,8 +1666,12 @@ def _check_ten_thou_ops(lattice: Lattice) -> None:
         got = number_name(number)
         if got != spelling:
             raise RuntimeError(f"{number} spelled {got}")
-    if number_name(11000) != "eleven thousand" or number_name(110000) != "?":
-        raise RuntimeError("the spelling table left eleven thousand or passed one hundred ten thousand")
+    if (
+        number_name(11000) != "eleven thousand"
+        or number_name(110000) != "one hundred ten thousand"
+        or number_name(1100000) != "?"
+    ):
+        raise RuntimeError("the spelling table left eleven thousand or passed one million ninety-nine thousand")
     if decimal_name(10000) != "10000":
         raise RuntimeError("the decimal ten-thousand operand left the integer")
     counts = census_ten_thousand_ops()
@@ -2938,11 +2956,13 @@ def _thou_note(
         note(buckets["block"], ok, gap, margin, dist, remainder, exact, miss)
 
 
-def _bound_reader(gauges, ten, hundred, thousand, ten_thousand, hundred_thousand=None):
+def _bound_reader(gauges, ten, hundred, thousand, ten_thousand, hundred_thousand=None, million=None):
     """One C call per row when the attend can hold this surface. Otherwise None."""
     from fsot_lattice import fast_attend
 
-    if fast_attend.bind_read(gauges, ten, hundred, thousand, ten_thousand, hundred_thousand):
+    if fast_attend.bind_read(
+        gauges, ten, hundred, thousand, ten_thousand, hundred_thousand, million
+    ):
         return fast_attend.consensus_read
     return None
 
@@ -3748,8 +3768,10 @@ def _check_hundred_thousands(lattice: Lattice) -> None:
         got = number_name(number)
         if got != spelling:
             raise RuntimeError(f"{number} spelled {got}")
-    if number_name(110000) != "?" or number_name(120000) != "?":
-        raise RuntimeError("a name past one hundred nine thousand nine hundred ninety-nine entered the table")
+    if number_name(110000) != "one hundred ten thousand" or number_name(120000) != "one hundred twenty thousand":
+        raise RuntimeError("one hundred ten thousand left the spelling table")
+    if number_name(1100000) != "?" or number_name(1200000) != "?":
+        raise RuntimeError("a name past one million ninety-nine thousand nine hundred ninety-nine entered the table")
     if decimal_name(100000) != "100000":
         raise RuntimeError("the decimal hundred thousand left the integer")
     counts = census_hundred_thousand_sums()
@@ -4058,6 +4080,407 @@ def _score_hundred_thousands(lattice: Lattice, surface: str, counts: dict[str, i
     return {name: _finish_running(bucket) for name, bucket in buckets.items()}
 
 
+def _check_millions(lattice: Lattice) -> None:
+    """The million place is the hundred-thousand step counted ten times.
+
+    Mixed units are checked on a pure line. The fresh digit gauges are exact
+    when the extra K on each units place cancels into that million, or when
+    a units digit is absent on both sides. A name still inside 0..999999
+    sheds zero millions.
+    """
+    spells = (
+        (100000, "one hundred thousand"),
+        (110000, "one hundred ten thousand"),
+        (120000, "one hundred twenty thousand"),
+        (999999, "nine hundred ninety-nine thousand nine hundred ninety-nine"),
+        (1000000, "one million"),
+        (1000001, "one million one"),
+        (1000010, "one million ten"),
+        (1000050, "one million fifty"),
+        (1000100, "one million one hundred"),
+        (1001000, "one million one thousand"),
+        (1010000, "one million ten thousand"),
+        (1090000, "one million ninety thousand"),
+        (1099998, "one million ninety-nine thousand nine hundred ninety-eight"),
+        (1099999, "one million ninety-nine thousand nine hundred ninety-nine"),
+    )
+    for number, spelling in spells:
+        got = number_name(number)
+        if got != spelling:
+            raise RuntimeError(f"{number} spelled {got}")
+    if number_name(1100000) != "?" or number_name(1200000) != "?":
+        raise RuntimeError("a name past one million ninety-nine thousand nine hundred ninety-nine entered the table")
+    if decimal_name(1000000) != "1000000":
+        raise RuntimeError("the decimal million left the integer")
+    counts = census_million_sums()
+    width = HUNDRED_THOUSAND
+    if counts["n"] != (width - 1) * width // 2:
+        raise RuntimeError("million sums left the ways to write 1000000..1099998")
+    if counts["ones"] != sum(range(1, RADIX)):
+        raise RuntimeError("million digit rights left 1..9")
+    if counts["place"] != sum(range(RADIX, RADIX * RADIX)):
+        raise RuntimeError("million place rights left 10..99")
+    if counts["block"] != sum(range(RADIX * RADIX, THOUSAND_SPAN)):
+        raise RuntimeError("million block rights left 100..999")
+    if counts["thou"] != sum(range(THOUSAND_SPAN, THOUSAND_CAP)):
+        raise RuntimeError("million thousand-name rights left 1000..9999")
+    if counts["hundthou"] != sum(range(THOUSAND_CAP, HUNDRED_THOUSAND)):
+        raise RuntimeError("million hundred-thousand-name rights left 10000..99999")
+    if (
+        counts["ones"] + counts["place"] + counts["block"] + counts["thou"] + counts["hundthou"]
+        != counts["n"]
+    ):
+        raise RuntimeError("million bands do not cover the family")
+    if counts["mark"] != width - 1:
+        raise RuntimeError("the exact millions are not the ways to write 1000000")
+    if counts["ten"] != 500040000:
+        raise RuntimeError("million exact tens left that band")
+    if counts["hundred"] != 50049000:
+        raise RuntimeError("million exact hundreds left that band")
+    if counts["thousand"] != 5049900:
+        raise RuntimeError("million exact thousands left that band")
+    if counts["tenthous"] != 549990:
+        raise RuntimeError("million exact ten-thousands left that band")
+    if counts["low"] != 999945:
+        raise RuntimeError("the million low band left 1000000..1000009")
+    if counts["high"] != 4950:
+        raise RuntimeError("the million high band left 1099900..1099998")
+    if counts["carry"] != 2250225000 or counts["nocarry"] != 2749725000:
+        raise RuntimeError("million carries left the units sums")
+    if counts["min_result"] != MILLION or counts["max_result"] != 1099998:
+        raise RuntimeError("million results left 1000000..1099998")
+    if counts["train"] + counts["hold"] != counts["n"] or counts["hold"] * 4 != counts["train"]:
+        raise RuntimeError(f"million split is {counts['train']}/{counts['hold']} of {counts['n']}")
+    for key in (
+        "ones",
+        "place",
+        "block",
+        "thou",
+        "hundthou",
+        "ten",
+        "hundred",
+        "thousand",
+        "tenthous",
+        "mark",
+        "carry",
+        "nocarry",
+        "low",
+        "high",
+    ):
+        if counts[key + "_train"] == 0 or counts[key + "_hold"] == 0:
+            raise RuntimeError(f"million split hid every {key} on one side")
+    step = K
+    gauges = [index * step for index in range(RADIX)]
+    ten = gauges[9] + gauges[1]
+    hundred = ten * RADIX
+    thousand = hundred * RADIX
+    ten_thousand = thousand * RADIX
+    hundred_thousand = ten_thousand * RADIX
+    million = hundred_thousand * RADIX
+
+    def _syn_read(left: int, right: int) -> tuple[int, float, float]:
+        left_q = lattice.compose_hundred_thousand(
+            left, hundred_thousand, ten_thousand, thousand, hundred, ten, gauges
+        )
+        right_q = lattice.compose_below_million(right, ten_thousand, thousand, hundred, ten, gauges)
+        quantity = lattice.consensus_quantity(left_q, right_q, 1)
+        named, remainder, margin, _dist = lattice.read_place(
+            quantity,
+            "digit",
+            ten,
+            gauges,
+            hundred,
+            thousand,
+            ten_thousand,
+            hundred_thousand,
+            million,
+        )
+        return named, remainder, margin
+
+    # A folded million vessel is about 5e5 and sits about 1e-8 off this integer line.
+    for number in (100000, 900000, 900001, 950000, 990000, 999999):
+        got = lattice.compose_hundred_thousand(
+            number, hundred_thousand, ten_thousand, thousand, hundred, ten, gauges
+        )
+        if abs(got - number * step) > 1e-7:
+            raise RuntimeError(f"synthetic {number} left the integer line")
+    folded = lattice.fold_steps(0.0, [(1, hundred_thousand) for _ in range(RADIX)])
+    if abs(folded - million) > 1e-7:
+        raise RuntimeError("the synthetic million left the hundred-thousand counted ten times")
+    cases = (
+        (999999, 1, 1000000),
+        (990001, 9999, 1000000),
+        (950000, 50000, 1000000),
+        (900001, 99999, 1000000),
+        (990000, 20000, 1010000),
+        (995000, 5000, 1000000),
+        (980000, 25000, 1005000),
+        (999999, 99999, 1099998),
+    )
+    for left, right, result in cases:
+        named, remainder, margin = _syn_read(left, right)
+        if named != result:
+            raise RuntimeError(f"rebuilt {left}+{right} read {named}")
+        if margin <= DROP:
+            raise RuntimeError(f"rebuilt {left}+{right} sat inside the drop")
+        if result % RADIX == 0 and abs(remainder) >= DROP:
+            raise RuntimeError(f"exact ten {left}+{right} left a remainder")
+    stay = (
+        (900001, 99998, 999999),
+        (950000, 49999, 999999),
+        (999998, 1, 999999),
+    )
+    for left, right, result in stay:
+        named, _remainder, margin = _syn_read(left, right)
+        if named != result:
+            raise RuntimeError(f"rebuilt {left}+{right} shed into the million")
+        if margin <= DROP:
+            raise RuntimeError(f"rebuilt {left}+{right} sat inside the drop")
+    bare = lattice.compose_hundred_thousand(
+        999999, hundred_thousand, ten_thousand, thousand, hundred, ten, gauges
+    )
+    named, _remainder, margin, _dist = lattice.read_place(
+        bare, "digit", ten, gauges, hundred, thousand, ten_thousand, hundred_thousand, million
+    )
+    if named != 999999 or margin <= DROP:
+        raise RuntimeError(f"synthetic 999999 read {named}")
+    live_hundred_thousand = lattice.hundred_thousand_quantity("digit")
+    live_million = lattice.million_quantity("digit")
+    if abs(live_million - RADIX * live_hundred_thousand) > 1e-7:
+        raise RuntimeError("the fresh million left the hundred-thousand counted ten times")
+    if lattice.read_place(live_million, "digit")[0] != MILLION:
+        raise RuntimeError("the million step did not read as 1000000")
+    fresh_top = lattice.compose_hundred_thousand(
+        999999,
+        live_hundred_thousand,
+        lattice.ten_thousand_quantity("digit"),
+        lattice.thousand_quantity("digit"),
+        lattice.hundred_quantity("digit"),
+        lattice.ten_quantity("digit"),
+        lattice.gauge_line("digit"),
+    )
+    if lattice.read_place(fresh_top, "digit")[0] != 999999:
+        raise RuntimeError("999999 shed a million on the fresh line")
+    fresh = (
+        MillionSum("digit", 999999, 1, 1000000),
+        MillionSum("thou", 990001, 9999, 1000000),
+        MillionSum("hundthou", 950000, 50000, 1000000),
+        MillionSum("hundthou", 900001, 99999, 1000000),
+        MillionSum("hundthou", 990000, 20000, 1010000),
+        MillionSum("thou", 995000, 5000, 1000000),
+        MillionSum("hundthou", 980000, 25000, 1005000),
+    )
+    for row in fresh:
+        if abs(lattice.million_sum_quantity(row, "digit") - lattice.algebraic_million_sum(row, "digit")) > 1e-7:
+            raise RuntimeError(f"fresh {row.digit_prompt()}{row.digit_answer()} left the algebraic sum")
+        got = lattice.predict_million(row, "digit")
+        if got != row.digit_answer():
+            raise RuntimeError(f"fresh {row.digit_prompt()}{row.digit_answer()} read {got}")
+    demos = fresh + (MillionSum("hundthou", 999999, 99999, 1099998),)
+    bands = ("digit", "place", "block", "thou", "hundthou")
+    for row in demos:
+        kind = million_kind(row.right)
+        if row.kind != bands[kind]:
+            raise RuntimeError(f"{row.digit_prompt()}{row.digit_answer()} left its right-hand band")
+        if not (MILLION - HUNDRED_THOUSAND + 1 <= row.left < MILLION):
+            raise RuntimeError(f"{row.digit_prompt()}{row.digit_answer()} is outside the million family")
+        if not (0 < row.right < HUNDRED_THOUSAND):
+            raise RuntimeError(f"{row.digit_prompt()}{row.digit_answer()} put a zero or a million on the right")
+        if row.result != row.left + row.right or not (MILLION <= row.result < MILLION_CAP):
+            raise RuntimeError(f"{row.digit_prompt()}{row.digit_answer()} left 1000000..1099998")
+
+
+def _million_spell(named: int, surface: str) -> str:
+    if named < MILLION or named >= MILLION_CAP:
+        return "?"
+    if surface == "digit":
+        return decimal_name(named)
+    return number_name(named)
+
+
+def _score_millions(lattice: Lattice, surface: str, counts: dict[str, int]) -> dict[str, dict]:
+    """One pass tags train, hold, and the structural subsets.
+
+    Each name 900001..999999 is nine hundred-thousand steps plus a name in
+    1..99999. The sum itself is one consensus pass. The million shed is the
+    hundred-thousand step counted ten times. Running totals keep the report
+    off the row list.
+    """
+    print(f"million {surface} start", flush=True)
+    started = time.perf_counter()
+    cache = _ten_thou_op_cache(lattice, surface)
+    span = HUNDRED_THOUSAND
+    below = THOUSAND_CAP
+    cap = MILLION
+    place = RADIX * RADIX
+    block = THOUSAND_SPAN
+    ten = cache["ten"]
+    gauges = cache["gauges"]
+    hundred = cache["hundred"]
+    thousand = cache["thousand"]
+    ten_thousand = cache["ten_thousand"]
+    lower_q = cache["right_q"]
+    lower_alg = cache["right_alg"]
+    consensus = cache["consensus"]
+    read = cache["read"]
+    plus = cache["plus"]
+    ten_alg = lattice._gauge(9, surface) + lattice._gauge(1, surface)
+    ten_thousand_alg = (RADIX ** 3) * ten_alg
+    right_q = [0.0] * span
+    right_alg = [0.0] * span
+    for right in range(below):
+        right_q[right] = lower_q[right]
+        right_alg[right] = lower_alg[right]
+    acc = 0.0
+    for count in range(1, RADIX):
+        acc = consensus(acc, ten_thousand, plus)
+        start = count * below
+        right_q[start] = acc
+        right_alg[start] = count * ten_thousand_alg
+        for rest in range(1, below):
+            right_q[start + rest] = consensus(acc, lower_q[rest], plus)
+            right_alg[start + rest] = count * ten_thousand_alg + lower_alg[rest]
+    hundred_thousand = consensus(acc, ten_thousand, plus)
+    hundred_thousand_alg = RADIX * ten_thousand_alg
+    nine = 0.0
+    for _ in range(RADIX - 1):
+        nine = consensus(nine, hundred_thousand, plus)
+    million = consensus(nine, hundred_thousand, plus)
+    nine_alg = (RADIX - 1) * hundred_thousand_alg
+    left_q = [0.0] * span
+    left_alg = [0.0] * span
+    for rest in range(1, span):
+        left_q[rest] = consensus(nine, right_q[rest], plus)
+        left_alg[rest] = nine_alg + right_alg[rest]
+    reader = _bound_reader(gauges, ten, hundred, thousand, ten_thousand, hundred_thousand, million)
+    names = (
+        "train",
+        "hold",
+        "closed",
+        "ones",
+        "place",
+        "block",
+        "thou",
+        "hundthou",
+        "ten",
+        "hundred",
+        "thousand",
+        "tenthous",
+        "mark",
+        "carry",
+        "low",
+        "high",
+    )
+    buckets = {name: _blank_running() for name in names}
+    note = _note_running
+    seen = 0
+    high_cut = cap + span - place
+    for left in range(cap - span + 1, cap):
+        rest = left - (cap - span)
+        left_q_row = left_q[rest]
+        left_alg_row = left_alg[rest]
+        left_mod = left % RADIX
+        for right in range(cap - left, span):
+            result = left + right
+            if right < RADIX:
+                kind = 0
+            elif right < place:
+                kind = 1
+            elif right < block:
+                kind = 2
+            elif right < below:
+                kind = 3
+            else:
+                kind = 4
+            right_value = right_q[right]
+            right_algebra = right_alg[right]
+            got = reader(left_q_row, right_value, plus) if reader is not None else None
+            if got is None:
+                quantity = consensus(left_q_row, right_value, plus)
+                named, remainder, margin, dist = read(
+                    quantity,
+                    surface,
+                    ten,
+                    gauges,
+                    hundred,
+                    thousand,
+                    ten_thousand,
+                    hundred_thousand,
+                    million,
+                )
+            else:
+                quantity, named, remainder, margin, dist = got
+            ok = named == result
+            gap = abs(quantity - (left_alg_row + right_algebra))
+            exact = result % RADIX == 0
+            miss = None
+            if not ok:
+                want = decimal_name(result) if surface == "digit" else number_name(result)
+                spelled = _million_spell(named, surface)
+                if surface == "digit":
+                    shown = f"{decimal_name(left)}+{decimal_name(right)}={decimal_name(result)}"
+                else:
+                    right_word = WORD_OF[right] if right < RADIX else number_name(right)
+                    shown = f"what is {number_name(left)} plus {right_word}"
+                miss = f"{shown} -> {spelled} (want {want})"
+            held = (left * 3 + right * 4 + 6 * kind) % 5 == 0
+            note(buckets["closed"], ok, gap, margin, dist, remainder, exact, miss)
+            note(buckets["hold" if held else "train"], ok, gap, margin, dist, remainder, exact, miss)
+            if kind == 0:
+                note(buckets["ones"], ok, gap, margin, dist, remainder, exact, miss)
+            elif kind == 1:
+                note(buckets["place"], ok, gap, margin, dist, remainder, exact, miss)
+            elif kind == 2:
+                note(buckets["block"], ok, gap, margin, dist, remainder, exact, miss)
+            elif kind == 3:
+                note(buckets["thou"], ok, gap, margin, dist, remainder, exact, miss)
+            else:
+                note(buckets["hundthou"], ok, gap, margin, dist, remainder, exact, miss)
+            if exact:
+                note(buckets["ten"], ok, gap, margin, dist, remainder, True, miss)
+            if result % place == 0:
+                note(buckets["hundred"], ok, gap, margin, dist, remainder, True, miss)
+            if result % block == 0:
+                note(buckets["thousand"], ok, gap, margin, dist, remainder, True, miss)
+            if result % below == 0:
+                note(buckets["tenthous"], ok, gap, margin, dist, remainder, True, miss)
+            if result % span == 0:
+                note(buckets["mark"], ok, gap, margin, dist, remainder, True, miss)
+            if left_mod + right % RADIX >= RADIX:
+                note(buckets["carry"], ok, gap, margin, dist, remainder, exact, miss)
+            if result < cap + RADIX:
+                note(buckets["low"], ok, gap, margin, dist, remainder, exact, miss)
+            if result >= high_cut:
+                note(buckets["high"], ok, gap, margin, dist, remainder, exact, miss)
+            seen += 1
+            if seen % 5000000 == 0:
+                elapsed = time.perf_counter() - started
+                print(f"million {surface} {seen} {elapsed:.0f}s", flush=True)
+    print(f"million {surface} done", flush=True)
+    if seen != counts["n"] or buckets["train"]["n"] != counts["train"] or buckets["hold"]["n"] != counts["hold"]:
+        raise RuntimeError(
+            f"million {surface} scored {seen} ({buckets['train']['n']}/{buckets['hold']['n']}) of {counts['n']}"
+        )
+    for key in (
+        "ones",
+        "place",
+        "block",
+        "thou",
+        "hundthou",
+        "ten",
+        "hundred",
+        "thousand",
+        "tenthous",
+        "mark",
+        "carry",
+        "low",
+        "high",
+    ):
+        if buckets[key]["n"] != counts[key]:
+            raise RuntimeError(f"million {surface} {key} scored {buckets[key]['n']}")
+    return {name: _finish_running(bucket) for name, bucket in buckets.items()}
+
+
 def score_generated(lattice: Lattice) -> dict:
     """Score every generated family on both surfaces. Gauges stay frozen."""
     order_train, order_hold = split_claims()
@@ -4076,6 +4499,7 @@ def score_generated(lattice: Lattice) -> dict:
     ten_thou_op_counts = census_ten_thousand_ops()
     ten_thou_pair_counts = census_ten_thousand_pairs()
     hund_thou_counts = census_hundred_thousand_sums()
+    million_counts = census_million_sums()
     products = all_products()
     spans = all_spans()
     lexemes = all_lexemes()
@@ -4251,6 +4675,22 @@ def score_generated(lattice: Lattice) -> dict:
         "hund_thou_carry_n": hund_thou_counts["carry"],
         "hund_thou_low_n": hund_thou_counts["low"],
         "hund_thou_high_n": hund_thou_counts["high"],
+        "million_count": million_counts["n"],
+        "million_train_count": million_counts["train"],
+        "million_hold_count": million_counts["hold"],
+        "million_ones_n": million_counts["ones"],
+        "million_place_n": million_counts["place"],
+        "million_block_n": million_counts["block"],
+        "million_thou_n": million_counts["thou"],
+        "million_hundthou_n": million_counts["hundthou"],
+        "million_ten_n": million_counts["ten"],
+        "million_hundred_n": million_counts["hundred"],
+        "million_thousand_n": million_counts["thousand"],
+        "million_tenthous_n": million_counts["tenthous"],
+        "million_mark_n": million_counts["mark"],
+        "million_carry_n": million_counts["carry"],
+        "million_low_n": million_counts["low"],
+        "million_high_n": million_counts["high"],
     }
     for surface in ("digit", "word"):
         report[f"order_{surface}_train"] = _order_block(lattice, order_train, surface)
@@ -4302,6 +4742,8 @@ def score_generated(lattice: Lattice) -> dict:
             report[f"ten_thou_pair_{surface}_{name}"] = block
         for name, block in _score_hundred_thousands(lattice, surface, hund_thou_counts).items():
             report[f"hund_thou_{surface}_{name}"] = block
+        for name, block in _score_millions(lattice, surface, million_counts).items():
+            report[f"million_{surface}_{name}"] = block
     report["demos"] = _demos(lattice)
     report["ok"] = generated_ok(report)
     return report
@@ -4322,7 +4764,7 @@ def _lexeme_ok(block: dict) -> bool:
 
 
 def generated_ok(report: dict) -> bool:
-    """Exact order, product, third step, place names, place pairs, hundreds, hundred operands, thousands, thousand operands, thousand pairs, ten-thousand sums, ten-thousand operands, ten-thousand differences, and hundred-thousand sums."""
+    """Exact order, product, third step, place names, place pairs, hundreds, hundred operands, thousands, thousand operands, thousand pairs, ten-thousand sums, ten-thousand operands, ten-thousand differences, hundred-thousand sums, and million sums."""
     for surface in ("digit", "word"):
         order_hold = report[f"order_{surface}_hold"]
         order_train = report[f"order_{surface}_train"]
@@ -4483,6 +4925,26 @@ def generated_ok(report: dict) -> bool:
             "high",
         ):
             if not _lexeme_ok(report[f"hund_thou_{surface}_{split}"]):
+                return False
+        for split in (
+            "train",
+            "hold",
+            "closed",
+            "ones",
+            "place",
+            "block",
+            "thou",
+            "hundthou",
+            "ten",
+            "hundred",
+            "thousand",
+            "tenthous",
+            "mark",
+            "carry",
+            "low",
+            "high",
+        ):
+            if not _lexeme_ok(report[f"million_{surface}_{split}"]):
                 return False
     return True
 
@@ -4651,6 +5113,14 @@ def _demos(lattice: Lattice) -> list[dict]:
         HundredThousandSum("block", 99500, 500, 100000),
         HundredThousandSum("thou", 98000, 2500, 100500),
         HundredThousandSum("thou", 99999, 9999, 109998),
+    )
+    millions = (
+        MillionSum("digit", 999999, 1, 1000000),
+        MillionSum("hundthou", 900001, 99999, 1000000),
+        MillionSum("hundthou", 990000, 20000, 1010000),
+        MillionSum("thou", 995000, 5000, 1000000),
+        MillionSum("hundthou", 980000, 25000, 1005000),
+        MillionSum("hundthou", 999999, 99999, 1099998),
     )
     demos = []
     for claim in claims:
@@ -4828,6 +5298,18 @@ def _demos(lattice: Lattice) -> list[dict]:
                 "digit_want": row.digit_answer(),
                 "digit_got": lattice.predict_hundred_thousand(row, "digit"),
                 "word_got": lattice.predict_hundred_thousand(row, "word"),
+            }
+        )
+    for row in millions:
+        demos.append(
+            {
+                "family": "million",
+                "digit": f"{row.digit_prompt()}{row.digit_answer()}",
+                "word": row.word_prompt(),
+                "want": row.word_answer(),
+                "digit_want": row.digit_answer(),
+                "digit_got": lattice.predict_million(row, "digit"),
+                "word_got": lattice.predict_million(row, "word"),
             }
         )
     return demos

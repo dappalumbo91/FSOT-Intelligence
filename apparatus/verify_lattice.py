@@ -92,6 +92,7 @@ def check_package(pin: str) -> list[str]:
             _exact(applied, f"ten_thou_op_{surface}_{bucket}", issues)
             _exact(applied, f"ten_thou_pair_{surface}_{bucket}", issues)
             _exact(applied, f"hund_thou_{surface}_{bucket}", issues)
+            _exact(applied, f"million_{surface}_{bucket}", issues)
     print(
         f"package promoted={report.get('promoted')} pin={str(report.get('pin'))[:12]} "
         f"width={report.get('width')} learned={report.get('learned_parameters')} "
@@ -116,11 +117,13 @@ def _place_grid(lattice: Lattice) -> list[int]:
     thousand = lattice.thousand_quantity("digit")
     ten_thousand = lattice.ten_thousand_quantity("digit")
     hundred_thousand = lattice.hundred_thousand_quantity("digit")
+    million = lattice.million_quantity("digit")
     gauges = [lattice.digit_value[str(digit)] for digit in range(10)]
     named: list[int] = []
     for quantity in (ten, hundred, thousand, ten_thousand):
         named.append(lattice.read_place(quantity, "digit", ten, gauges, hundred, thousand, ten_thousand)[0])
     named.append(lattice.read_place(hundred_thousand, "digit")[0])
+    named.append(lattice.read_place(million, "digit")[0])
     for left in gauges:
         for right in gauges[::3]:
             total = lattice.consensus_quantity(left, right, 1)

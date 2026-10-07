@@ -16,7 +16,7 @@ place read together. Training, the English spellings, the census, and the
 promotion gate stay Python, and they call the C attend for every scored row.
 GitHub's language share follows those Python lines, including the pinned
 engine `vendor/fsot_compute.py`. The same gauges name closed arithmetic from
-a single digit through the sums that leave 0..99999. The score
+a single digit through the sums that leave 0..999999. The score
 writeup is [apparatus/README.md](apparatus/README.md).
 
 ## Verify
@@ -37,8 +37,10 @@ python apparatus\run_lattice.py
 ```
 
 A full promotion re-scores the closed package. The run that promoted this
-package finished in 3382.35 seconds. The earlier compiled package, the
-ten-thousand difference, finished in 1980.31 seconds. The compiled attend is
+package finished in 112076.55 seconds. It scored the 4999950000 million sums
+in 52221 seconds on the digit surface and 56460 seconds on the word surface.
+The earlier compiled package, the hundred-thousand sums, finished in 3382.35
+seconds. The ten-thousand difference finished in 1980.31 seconds. The compiled attend is
 `apparatus/fsot_lattice/attend_core.c`. Build it beside the Python file and
 the loader uses it. A missing library leaves the Python attend in place, and
 that path names the same cells.

@@ -240,6 +240,22 @@
     "hund_thou_carry_n": 22522500,
     "hund_thou_low_n": 99945,
     "hund_thou_high_n": 4950,
+    "million_count": 4999950000,
+    "million_train_count": 3999960000,
+    "million_hold_count": 999990000,
+    "million_ones_n": 45,
+    "million_place_n": 4905,
+    "million_block_n": 494550,
+    "million_thou_n": 49495500,
+    "million_hundthou_n": 4949955000,
+    "million_ten_n": 500040000,
+    "million_hundred_n": 50049000,
+    "million_thousand_n": 5049900,
+    "million_tenthous_n": 549990,
+    "million_mark_n": 99999,
+    "million_carry_n": 2250225000,
+    "million_low_n": 999945,
+    "million_high_n": 4950,
     "order_digit_train": {
       "acc": 1.0,
       "correct": 880,
@@ -1840,6 +1856,182 @@
       "ten_n": 540,
       "ten_max_abs": 0.0004922616882545583,
       "units_max_abs": 0.0008924282721141097
+    },
+    "million_digit_train": {
+      "acc": 1.0,
+      "correct": 3999960000,
+      "n": 3999960000,
+      "misses": [],
+      "gap": 1.0461359335784727e-08,
+      "margin_min": 0.4846095834763351,
+      "ten_n": 400030001,
+      "ten_max_abs": 0.0004922638530731049,
+      "units_max_abs": 0.0008924299023922444
+    },
+    "million_digit_hold": {
+      "acc": 1.0,
+      "correct": 999990000,
+      "n": 999990000,
+      "misses": [],
+      "gap": 1.0461353773419579e-08,
+      "margin_min": 0.48460958225838313,
+      "ten_n": 100009999,
+      "ten_max_abs": 0.0004922632611412681,
+      "units_max_abs": 0.0008924305113682252
+    },
+    "million_digit_closed": {
+      "acc": 1.0,
+      "correct": 4999950000,
+      "n": 4999950000,
+      "misses": [],
+      "gap": 1.0461358223311699e-08,
+      "margin_min": 0.48460958225838313,
+      "ten_n": 500040000,
+      "ten_max_abs": 0.0004922638530731049,
+      "units_max_abs": 0.0008924305113682252
+    },
+    "million_digit_ones": {
+      "acc": 1.0,
+      "correct": 45,
+      "n": 45,
+      "misses": [],
+      "gap": 1.031827802459399e-08,
+      "margin_min": 0.4846095860560031,
+      "ten_n": 9,
+      "ten_max_abs": 0.0004922619555145502,
+      "units_max_abs": 0.000892428612558227
+    },
+    "million_digit_place": {
+      "acc": 1.0,
+      "correct": 4905,
+      "n": 4905,
+      "misses": [],
+      "gap": 1.028073081987835e-08,
+      "margin_min": 0.48460958510696317,
+      "ten_n": 531,
+      "ten_max_abs": 0.0004922624300709444,
+      "units_max_abs": 0.0008924290870782059
+    },
+    "million_digit_block": {
+      "acc": 1.0,
+      "correct": 494550,
+      "n": 494550,
+      "misses": [],
+      "gap": 1.0244792426904597e-08,
+      "margin_min": 0.48460958383969244,
+      "ten_n": 49860,
+      "ten_max_abs": 0.0004922630318020538,
+      "units_max_abs": 0.0008924297207135723
+    },
+    "million_digit_thou": {
+      "acc": 1.0,
+      "correct": 49495500,
+      "n": 49495500,
+      "misses": [],
+      "gap": 1.0264220172232742e-08,
+      "margin_min": 0.4846095834763351,
+      "ten_n": 4953600,
+      "ten_max_abs": 0.0004922632611412681,
+      "units_max_abs": 0.0008924299023922444
+    },
+    "million_digit_hundthou": {
+      "acc": 1.0,
+      "correct": 4949955000,
+      "n": 4949955000,
+      "misses": [],
+      "gap": 1.0463351259902498e-08,
+      "margin_min": 0.48460958225838313,
+      "ten_n": 495036000,
+      "ten_max_abs": 0.0004922638530731049,
+      "units_max_abs": 0.0008924305113682252
+    },
+    "million_digit_ten": {
+      "acc": 1.0,
+      "correct": 500040000,
+      "n": 500040000,
+      "misses": [],
+      "gap": 1.0461340135522104e-08,
+      "margin_min": 0.4863032010766803,
+      "ten_n": 500040000,
+      "ten_max_abs": 0.0004922638530731049,
+      "units_max_abs": 0.0004953234894912536
+    },
+    "million_digit_hundred": {
+      "acc": 1.0,
+      "correct": 50049000,
+      "n": 50049000,
+      "misses": [],
+      "gap": 1.0461839398389997e-08,
+      "margin_min": 0.48630320118471654,
+      "ten_n": 50049000,
+      "ten_max_abs": 0.0004922638250377531,
+      "units_max_abs": 0.0004953234614559018
+    },
+    "million_digit_thousand": {
+      "acc": 1.0,
+      "correct": 5049900,
+      "n": 5049900,
+      "misses": [],
+      "gap": 1.0459886766414968e-08,
+      "margin_min": 0.4863032013977941,
+      "ten_n": 5049900,
+      "ten_max_abs": 0.0004922636039168538,
+      "units_max_abs": 0.0004953232403350024
+    },
+    "million_digit_tenthous": {
+      "acc": 1.0,
+      "correct": 549990,
+      "n": 549990,
+      "misses": [],
+      "gap": 1.0446250105541577e-08,
+      "margin_min": 0.4863032020747992,
+      "ten_n": 549990,
+      "ten_max_abs": 0.0004922629332213546,
+      "units_max_abs": 0.0004953225696395033
+    },
+    "million_digit_mark": {
+      "acc": 1.0,
+      "correct": 99999,
+      "n": 99999,
+      "misses": [],
+      "gap": 1.0434958543176013e-08,
+      "margin_min": 0.4863032061929912,
+      "ten_n": 99999,
+      "ten_max_abs": 0.0004922623047605157,
+      "units_max_abs": 0.0004953219411786644
+    },
+    "million_digit_carry": {
+      "acc": 1.0,
+      "correct": 2250225000,
+      "n": 2250225000,
+      "misses": [],
+      "gap": 1.0461508905676633e-08,
+      "margin_min": 0.48460958225838313,
+      "ten_n": 450045000,
+      "ten_max_abs": 0.0004922638530731049,
+      "units_max_abs": 0.0008924305113682252
+    },
+    "million_digit_low": {
+      "acc": 1.0,
+      "correct": 999945,
+      "n": 999945,
+      "misses": [],
+      "gap": 1.0221035148865371e-08,
+      "margin_min": 0.4846095853575112,
+      "ten_n": 99999,
+      "ten_max_abs": 0.0004922623047605157,
+      "units_max_abs": 0.0008924289618041925
+    },
+    "million_digit_high": {
+      "acc": 1.0,
+      "correct": 4950,
+      "n": 4950,
+      "misses": [],
+      "gap": 1.1108773337169127e-08,
+      "margin_min": 0.4846095838161557,
+      "ten_n": 540,
+      "ten_max_abs": 0.0004922630381081206,
+      "units_max_abs": 0.0008924297324819364
     },
     "order_word_train": {
       "acc": 1.0,
@@ -3442,6 +3634,182 @@
       "ten_max_abs": 0.00022755340724867068,
       "units_max_abs": 0.00041596686449096865
     },
+    "million_word_train": {
+      "acc": 1.0,
+      "correct": 3999960000,
+      "n": 3999960000,
+      "misses": [],
+      "gap": 7.851005720048114e-09,
+      "margin_min": 0.4850939906025169,
+      "ten_n": 400030001,
+      "ten_max_abs": 0.00022755500277682472,
+      "units_max_abs": 0.0004159679513149328
+    },
+    "million_word_hold": {
+      "acc": 1.0,
+      "correct": 999990000,
+      "n": 999990000,
+      "misses": [],
+      "gap": 7.851007586684603e-09,
+      "margin_min": 0.4850939895661832,
+      "ten_n": 100009999,
+      "ten_max_abs": 0.00022755450639166952,
+      "units_max_abs": 0.00041596846948177557
+    },
+    "million_word_closed": {
+      "acc": 1.0,
+      "correct": 4999950000,
+      "n": 4999950000,
+      "misses": [],
+      "gap": 7.851006093375412e-09,
+      "margin_min": 0.4850939895661832,
+      "ten_n": 500040000,
+      "ten_max_abs": 0.00022755500277682472,
+      "units_max_abs": 0.00041596846948177557
+    },
+    "million_word_ones": {
+      "acc": 1.0,
+      "correct": 45,
+      "n": 45,
+      "misses": [],
+      "gap": 7.737738390763601e-09,
+      "margin_min": 0.4850939967425867,
+      "ten_n": 9,
+      "ten_max_abs": 0.00022755301324650645,
+      "units_max_abs": 0.00041596488128003983
+    },
+    "million_word_place": {
+      "acc": 1.0,
+      "correct": 4905,
+      "n": 4905,
+      "misses": [],
+      "gap": 7.590492589211246e-09,
+      "margin_min": 0.48509399248407314,
+      "ten_n": 531,
+      "ten_max_abs": 0.00022755385881012558,
+      "units_max_abs": 0.00041596701053681073
+    },
+    "million_word_block": {
+      "acc": 1.0,
+      "correct": 494550,
+      "n": 494550,
+      "misses": [],
+      "gap": 7.653773060145134e-09,
+      "margin_min": 0.4850939908548786,
+      "ten_n": 49860,
+      "ten_max_abs": 0.00022755430320220427,
+      "units_max_abs": 0.00041596782513408925
+    },
+    "million_word_thou": {
+      "acc": 1.0,
+      "correct": 49495500,
+      "n": 49495500,
+      "misses": [],
+      "gap": 7.65702906912505e-09,
+      "margin_min": 0.4850939906025169,
+      "ten_n": 4953600,
+      "ten_max_abs": 0.00022755457249967748,
+      "units_max_abs": 0.0004159679513149328
+    },
+    "million_word_hundthou": {
+      "acc": 1.0,
+      "correct": 4949955000,
+      "n": 4949955000,
+      "misses": [],
+      "gap": 7.852965669637449e-09,
+      "margin_min": 0.4850939895661832,
+      "ten_n": 495036000,
+      "ten_max_abs": 0.00022755500277682472,
+      "units_max_abs": 0.00041596846948177557
+    },
+    "million_word_ten": {
+      "acc": 1.0,
+      "correct": 500040000,
+      "n": 500040000,
+      "misses": [],
+      "gap": 7.850981685503745e-09,
+      "margin_min": 0.4858869180800083,
+      "ten_n": 500040000,
+      "ten_max_abs": 0.00022755500277682472,
+      "units_max_abs": 0.00023785273701950834
+    },
+    "million_word_hundred": {
+      "acc": 1.0,
+      "correct": 50049000,
+      "n": 50049000,
+      "misses": [],
+      "gap": 7.850745576063999e-09,
+      "margin_min": 0.4858869181110732,
+      "ten_n": 50049000,
+      "ten_max_abs": 0.00022755496735982206,
+      "units_max_abs": 0.00023785270160250568
+    },
+    "million_word_thousand": {
+      "acc": 1.0,
+      "correct": 5049900,
+      "n": 5049900,
+      "misses": [],
+      "gap": 7.847174314473335e-09,
+      "margin_min": 0.4858869183089025,
+      "ten_n": 5049900,
+      "ten_max_abs": 0.00022755493120030224,
+      "units_max_abs": 0.00023785266544298586
+    },
+    "million_word_tenthous": {
+      "acc": 1.0,
+      "correct": 549990,
+      "n": 549990,
+      "misses": [],
+      "gap": 7.972094843700166e-09,
+      "margin_min": 0.4858869186174486,
+      "ten_n": 549990,
+      "ten_max_abs": 0.00022755336249247193,
+      "units_max_abs": 0.00023785109673515555
+    },
+    "million_word_mark": {
+      "acc": 1.0,
+      "correct": 99999,
+      "n": 99999,
+      "misses": [],
+      "gap": 7.70140108015801e-09,
+      "margin_min": 0.4858869189721515,
+      "ten_n": 99999,
+      "ten_max_abs": 0.00022755336249247193,
+      "units_max_abs": 0.00023785109673515555
+    },
+    "million_word_carry": {
+      "acc": 1.0,
+      "correct": 2250225000,
+      "n": 2250225000,
+      "misses": [],
+      "gap": 7.85059426165995e-09,
+      "margin_min": 0.4850939895661832,
+      "ten_n": 450045000,
+      "ten_max_abs": 0.00022755500277682472,
+      "units_max_abs": 0.00041596846948177557
+    },
+    "million_word_low": {
+      "acc": 1.0,
+      "correct": 999945,
+      "n": 999945,
+      "misses": [],
+      "gap": 7.61050842205594e-09,
+      "margin_min": 0.48509399487994154,
+      "ten_n": 99999,
+      "ten_max_abs": 0.00022755336249247193,
+      "units_max_abs": 0.00041596581260261445
+    },
+    "million_word_high": {
+      "acc": 1.0,
+      "correct": 4950,
+      "n": 4950,
+      "misses": [],
+      "gap": 8.241311091967303e-09,
+      "margin_min": 0.4850939907828402,
+      "ten_n": 540,
+      "ten_max_abs": 0.00022755477900915366,
+      "units_max_abs": 0.0004159678611532769
+    },
     "demos": [
       {
         "family": "order",
@@ -4574,6 +4942,60 @@
         "digit_want": "109998",
         "digit_got": "109998",
         "word_got": "one hundred nine thousand nine hundred ninety-eight"
+      },
+      {
+        "family": "million",
+        "digit": "999999+1=1000000",
+        "word": "what is nine hundred ninety-nine thousand nine hundred ninety-nine plus one",
+        "want": "one million",
+        "digit_want": "1000000",
+        "digit_got": "1000000",
+        "word_got": "one million"
+      },
+      {
+        "family": "million",
+        "digit": "900001+99999=1000000",
+        "word": "what is nine hundred thousand one plus ninety-nine thousand nine hundred ninety-nine",
+        "want": "one million",
+        "digit_want": "1000000",
+        "digit_got": "1000000",
+        "word_got": "one million"
+      },
+      {
+        "family": "million",
+        "digit": "990000+20000=1010000",
+        "word": "what is nine hundred ninety thousand plus twenty thousand",
+        "want": "one million ten thousand",
+        "digit_want": "1010000",
+        "digit_got": "1010000",
+        "word_got": "one million ten thousand"
+      },
+      {
+        "family": "million",
+        "digit": "995000+5000=1000000",
+        "word": "what is nine hundred ninety-five thousand plus five thousand",
+        "want": "one million",
+        "digit_want": "1000000",
+        "digit_got": "1000000",
+        "word_got": "one million"
+      },
+      {
+        "family": "million",
+        "digit": "980000+25000=1005000",
+        "word": "what is nine hundred eighty thousand plus twenty-five thousand",
+        "want": "one million five thousand",
+        "digit_want": "1005000",
+        "digit_got": "1005000",
+        "word_got": "one million five thousand"
+      },
+      {
+        "family": "million",
+        "digit": "999999+99999=1099998",
+        "word": "what is nine hundred ninety-nine thousand nine hundred ninety-nine plus ninety-nine thousand nine hundred ninety-nine",
+        "want": "one million ninety-nine thousand nine hundred ninety-eight",
+        "digit_want": "1099998",
+        "digit_got": "1099998",
+        "word_got": "one million ninety-nine thousand nine hundred ninety-eight"
       }
     ],
     "ok": true
@@ -4771,7 +5193,7 @@
       "intermediate_zero": true
     }
   ],
-  "wall_seconds": 3382.350140299881,
+  "wall_seconds": 112076.5433433,
   "digit_history_tail": [
     {
       "epoch": 60,
