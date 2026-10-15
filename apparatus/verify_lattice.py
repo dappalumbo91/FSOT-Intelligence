@@ -60,7 +60,7 @@ def check_package(pin: str) -> list[str]:
         issues.append("package is not promoted")
     if not str(report.get("pin", "")).startswith(pin[:12]):
         issues.append(f"package pin {str(report.get('pin', ''))[:12]} is not {pin[:12]}")
-    if report.get("width") != 60 or report.get("learned_parameters") != 1940:
+    if report.get("width") != 60 or report.get("learned_parameters") != 1950:
         issues.append(
             f"width {report.get('width')} learned {report.get('learned_parameters')}"
         )
@@ -76,9 +76,21 @@ def check_package(pin: str) -> list[str]:
         issues.append("pathway confidence fell under 0.5")
     if report.get("kept_bonds") != 1920.0:
         issues.append(f"kept bonds {report.get('kept_bonds')}")
-    for key in ("equality_ok", "composition_ok", "apply_ok", "retention_ok"):
+    for key in (
+        "equality_ok",
+        "composition_ok",
+        "apply_ok",
+        "retention_ok",
+        "content_ok",
+        "statement_ok",
+        "kind_ok",
+        "follow_ok",
+        "count_ok",
+    ):
         if report.get(key) is not True:
             issues.append(f"{key} is not true")
+    if float(report.get("content_residual") or 1.0) >= FLOOR:
+        issues.append(f"content residual {report.get('content_residual')}")
     applied = report.get("apply") or {}
     if applied.get("ok") is not True:
         issues.append("generated application is not ok")
@@ -124,6 +136,9 @@ def _place_grid(lattice: Lattice) -> list[int]:
         named.append(lattice.read_place(quantity, "digit", ten, gauges, hundred, thousand, ten_thousand)[0])
     named.append(lattice.read_place(hundred_thousand, "digit")[0])
     named.append(lattice.read_place(million, "digit")[0])
+    steps = lattice.place_steps("digit")
+    named.append(lattice.read_place(steps[9], "digit")[0])
+    named.append(lattice.read_place(steps[12], "digit")[0])
     for left in gauges:
         for right in gauges[::3]:
             total = lattice.consensus_quantity(left, right, 1)

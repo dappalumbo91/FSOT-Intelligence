@@ -35,6 +35,23 @@ Two ten-thousand names share one expression. The result that stays inside
 the spelled table is their difference, and that difference lands in 0..999.
 A sum that leaves 0..99999 sheds the ten-thousand step counted ten times.
 That hundred-thousand place names the result. The spelling is a prior.
+A sum that leaves 0..999999 sheds the hundred-thousand step counted ten times.
+That million place names the result. Ten million through a trillion are that
+same count. Full-row enumeration stops at the million. Those six rungs are
+proved on a checked band. The spelling is a prior.
+Ten content words sit beside that table. Each word is a gauge.
+"is cat dog" is the equality read: yes when the two gauges cancel,
+no when the remainder clears the drop. yes and no stay priors.
+"a cat is an animal" is that same read: one step up to the kind-head
+at or above the subject gauge, then the remainder against the stated
+word. A depth-3 chain takes that step three times. The kind table is
+a prior, the same status as the place spellings.
+A follow-up reads the working carrier. The carrier starts empty.
+"a cat is an animal" leaves the animal gauge there. "is it an animal"
+is the equality read of that gauge. The next named sentence replaces it.
+A counted sentence leaves a number-word gauge beside that kind.
+"two cats" leaves two and animal. "is it two" and "is it an animal"
+read those clocks. Zero stays out: its gauge sits under the drop.
 """
 
 from __future__ import annotations
@@ -68,9 +85,20 @@ TEN_THOUSAND_CAP = THOUSAND_CAP + THOUSAND_SPAN
 # Hundred-thousand answers stay inside 100000..109999. The spelling table continues.
 HUNDRED_THOUSAND = RADIX ** 5
 HUNDRED_THOUSAND_CAP = HUNDRED_THOUSAND + THOUSAND_CAP
-# Spellings through one million ninety-nine thousand nine hundred ninety-nine.
+# Million answers stay inside 1000000..1099999. The spelling table continues.
 MILLION = RADIX ** 6
 MILLION_CAP = MILLION + HUNDRED_THOUSAND
+TEN_MILLION = RADIX ** 7
+HUNDRED_MILLION = RADIX ** 8
+BILLION = RADIX ** 9
+TEN_BILLION = RADIX ** 10
+HUNDRED_BILLION = RADIX ** 11
+TRILLION = RADIX ** 12
+# One trillion one hundred billion is outside the spelling table.
+TRILLION_CAP = TRILLION + HUNDRED_BILLION
+# Checked band at each rung past the million. The right operand stays under 1000.
+HIGHER_EXPS = (7, 8, 9, 10, 11, 12)
+HIGHER_BAND = 1000
 TEEN_WORD = {
     10: "ten",
     11: "eleven",
@@ -96,13 +124,95 @@ TENS_WORD = {
 HUNDRED_WORD = "hundred"
 THOUSAND_WORD = "thousand"
 MILLION_WORD = "million"
+BILLION_WORD = "billion"
+TRILLION_WORD = "trillion"
+# Closed content lexicon. The order is the offset line, the same role a digit has.
+# yes, no, less, same, more, times, and beside stay priors.
+CONTENT_WORDS = (
+    "cat",
+    "dog",
+    "bird",
+    "fish",
+    "animal",
+    "oak",
+    "rose",
+    "plant",
+    "rock",
+    "water",
+)
+ANSWER_PRIORS = ("yes", "no", "less", "same", "more", "times", "beside")
+# Kind of each content word, in that same order. A head is its own kind.
+# On the offset line the groups sit under the head: cat through animal,
+# oak through plant, then rock, then water.
+CONTENT_KIND = (
+    "animal",
+    "animal",
+    "animal",
+    "animal",
+    "animal",
+    "plant",
+    "plant",
+    "plant",
+    "rock",
+    "water",
+)
+KIND_HEADS = ("animal", "plant", "rock", "water")
+KIND_STEPS = 3
+CONTENT_KIND_OF = {word: kind for word, kind in zip(CONTENT_WORDS, CONTENT_KIND)}
+
+
+def article(word: str) -> str:
+    """Prior article. A vowel-initial word takes an."""
+    if word[:1] in "aeiou":
+        return "an"
+    return "a"
+
+
+def content_kind(word: str) -> str:
+    return CONTENT_KIND_OF[word]
+
+
+# Number words whose gauges clear the drop. Zero is about 1e-5 and would
+# read as an empty count clock, so it is not a counted noun.
+COUNT_WORDS = (
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+)
+# A false kind probe, one head away from the landed kind.
+OPPOSED_KIND = {
+    "animal": "plant",
+    "plant": "animal",
+    "rock": "water",
+    "water": "rock",
+}
+
+
+def plural(word: str) -> str:
+    """Prior plural. Fish stays fish. The gauge key stays the singular."""
+    if word == "fish":
+        return "fish"
+    return word + "s"
+
+
+def count_phrase(count: str, word: str) -> str:
+    """One stays singular. Two and above take the prior plural."""
+    if count == "one":
+        return f"one {word}"
+    return f"{count} {plural(word)}"
 
 
 def number_name(n: int) -> str:
     """English spelling of a place-value count. Compounds use a hyphen."""
     span = RADIX * RADIX
     thousand = span * RADIX
-    if n < 0 or n >= MILLION_CAP:
+    if n < 0 or n >= TRILLION_CAP:
         return "?"
     if n < RADIX:
         return WORD_OF[n]
@@ -117,6 +227,18 @@ def number_name(n: int) -> str:
     if n < thousand:
         hundreds, rest = divmod(n, span)
         stem = f"{WORD_OF[hundreds]} {HUNDRED_WORD}"
+        if rest == 0:
+            return stem
+        return f"{stem} {number_name(rest)}"
+    if n >= TRILLION:
+        trillions, rest = divmod(n, TRILLION)
+        stem = f"{number_name(trillions)} {TRILLION_WORD}"
+        if rest == 0:
+            return stem
+        return f"{stem} {number_name(rest)}"
+    if n >= BILLION:
+        billions, rest = divmod(n, BILLION)
+        stem = f"{number_name(billions)} {BILLION_WORD}"
         if rest == 0:
             return stem
         return f"{stem} {number_name(rest)}"
@@ -243,6 +365,229 @@ def _hold_claim(claim: Claim) -> bool:
     """
     op_bit = 0 if claim.op == "+" else 1
     return (claim.a * 3 + claim.b * 4 + claim.claimed * 7 + op_bit) % 5 == 0
+
+
+@dataclass(frozen=True)
+class ContentAsk:
+    """Two content words. The answer is yes when they are the same word."""
+
+    left: str
+    right: str
+
+    def prompt(self) -> str:
+        return f"is {self.left} {self.right}"
+
+    def answer(self) -> str:
+        return "yes" if self.left == self.right else "no"
+
+    def holds(self) -> bool:
+        return self.left == self.right
+
+
+def content_held(left: int, right: int) -> bool:
+    """Deterministic fifth. No coefficient is a multiple of 5."""
+    return (left * 3 + right * 4) % 5 == 0
+
+
+def all_content() -> list[ContentAsk]:
+    """Every ordered pair of the closed content lexicon."""
+    return [
+        ContentAsk(left, right)
+        for left in CONTENT_WORDS
+        for right in CONTENT_WORDS
+    ]
+
+
+def split_content() -> tuple[list[ContentAsk], list[ContentAsk]]:
+    index = {word: place for place, word in enumerate(CONTENT_WORDS)}
+    rows = all_content()
+    train = [row for row in rows if not content_held(index[row.left], index[row.right])]
+    hold = [row for row in rows if content_held(index[row.left], index[row.right])]
+    return train, hold
+
+
+@dataclass(frozen=True)
+class Statement:
+    """One kind step. Yes when the stated word is the kind of the subject."""
+
+    subject: str
+    stated: str
+
+    def prompt(self) -> str:
+        return (
+            f"{article(self.subject)} {self.subject} is "
+            f"{article(self.stated)} {self.stated}"
+        )
+
+    def holds(self) -> bool:
+        return self.stated == content_kind(self.subject)
+
+    def answer(self) -> str:
+        return "yes" if self.holds() else "no"
+
+
+def statement_held(subject: int, stated: int) -> bool:
+    """Deterministic fifth. 6 is not a multiple of 5, so the stated word still moves the split."""
+    return (subject * 3 + stated * 6) % 5 == 0
+
+
+def all_statements() -> list[Statement]:
+    """Every subject paired with every stated content word."""
+    return [
+        Statement(subject, stated)
+        for subject in CONTENT_WORDS
+        for stated in CONTENT_WORDS
+    ]
+
+
+def split_statements() -> tuple[list[Statement], list[Statement]]:
+    index = {word: place for place, word in enumerate(CONTENT_WORDS)}
+    rows = all_statements()
+    train = [
+        row for row in rows
+        if not statement_held(index[row.subject], index[row.stated])
+    ]
+    hold = [
+        row for row in rows
+        if statement_held(index[row.subject], index[row.stated])
+    ]
+    return train, hold
+
+
+@dataclass(frozen=True)
+class KindChain:
+    """Three kind steps. Each step after the first reads the running vessel."""
+
+    subject: str
+
+    def prompt(self) -> str:
+        kind = content_kind(self.subject)
+        hop = f"is {article(kind)} {kind}"
+        return f"{article(self.subject)} {self.subject} " + " ".join([hop] * KIND_STEPS)
+
+    def answer(self) -> str:
+        return content_kind(self.subject)
+
+
+def kind_held(subject: int) -> bool:
+    """Deterministic fifth of the ten kind chains."""
+    return (subject * 3) % 5 == 0
+
+
+def all_kind_chains() -> list[KindChain]:
+    return [KindChain(word) for word in CONTENT_WORDS]
+
+
+def split_kind_chains() -> tuple[list[KindChain], list[KindChain]]:
+    index = {word: place for place, word in enumerate(CONTENT_WORDS)}
+    rows = all_kind_chains()
+    train = [row for row in rows if not kind_held(index[row.subject])]
+    hold = [row for row in rows if kind_held(index[row.subject])]
+    return train, hold
+
+
+@dataclass(frozen=True)
+class FollowUp:
+    """Two named sentences. The second replaces the kind the first left."""
+
+    first: str
+    second: str
+
+    def opening(self) -> str:
+        kind = content_kind(self.first)
+        return f"{article(self.first)} {self.first} is {article(kind)} {kind}"
+
+    def closing(self) -> str:
+        kind = content_kind(self.second)
+        return f"{article(self.second)} {self.second} is {article(kind)} {kind}"
+
+    def ask(self, word: str) -> str:
+        return f"is it {article(word)} {word}"
+
+    def same_kind(self) -> bool:
+        return content_kind(self.first) == content_kind(self.second)
+
+
+def follow_held(first: int, second: int) -> bool:
+    """Deterministic fifth. No coefficient is a multiple of 5."""
+    return (first * 3 + second * 4) % 5 == 0
+
+
+def all_follows() -> list[FollowUp]:
+    """Every ordered pair of content words, each pair a two-sentence conversation."""
+    return [
+        FollowUp(first, second)
+        for first in CONTENT_WORDS
+        for second in CONTENT_WORDS
+    ]
+
+
+def split_follows() -> tuple[list[FollowUp], list[FollowUp]]:
+    index = {word: place for place, word in enumerate(CONTENT_WORDS)}
+    rows = all_follows()
+    train = [row for row in rows if not follow_held(index[row.first], index[row.second])]
+    hold = [row for row in rows if follow_held(index[row.first], index[row.second])]
+    return train, hold
+
+
+@dataclass(frozen=True)
+class Counted:
+    """One sentence. The count clock and the kind clock each take a gauge."""
+
+    count: str
+    subject: str
+
+    def opening(self) -> str:
+        return count_phrase(self.count, self.subject)
+
+    def ask_count(self, count: str) -> str:
+        return f"is it {count}"
+
+    def ask_kind(self, word: str) -> str:
+        return f"is it {article(word)} {word}"
+
+    def kind(self) -> str:
+        return content_kind(self.subject)
+
+    def next_count(self) -> str:
+        place = COUNT_WORDS.index(self.count)
+        return COUNT_WORDS[(place + 1) % len(COUNT_WORDS)]
+
+    def next_subject(self) -> str:
+        place = CONTENT_WORDS.index(self.subject)
+        return CONTENT_WORDS[(place + 1) % len(CONTENT_WORDS)]
+
+    def kind_changes(self) -> bool:
+        return self.kind() != content_kind(self.next_subject())
+
+
+def count_held(count: int, subject: int) -> bool:
+    """Deterministic fifth. Adding the indexes keeps every count and every subject in train."""
+    return (count + subject) % 5 == 0
+
+
+def all_counts() -> list[Counted]:
+    """Every number word from one through nine, on every content word."""
+    return [
+        Counted(count, subject)
+        for count in COUNT_WORDS
+        for subject in CONTENT_WORDS
+    ]
+
+
+def split_counts() -> tuple[list[Counted], list[Counted]]:
+    counts = {word: place for place, word in enumerate(COUNT_WORDS)}
+    subjects = {word: place for place, word in enumerate(CONTENT_WORDS)}
+    rows = all_counts()
+    train = [
+        row for row in rows
+        if not count_held(counts[row.count], subjects[row.subject])
+    ]
+    hold = [
+        row for row in rows
+        if count_held(counts[row.count], subjects[row.subject])
+    ]
+    return train, hold
 
 
 def split_claims() -> tuple[list[Claim], list[Claim]]:
@@ -1940,6 +2285,96 @@ def census_million_sums() -> dict[str, int]:
     out["min_result"] = cap
     out["max_result"] = cap + span - 2
     print(f"million census {out['n']}", flush=True)
+    return out
+
+
+def higher_kind(right: int) -> int:
+    """0 digit, 1 place, 2 block. The checked band's right operand stays under 1000."""
+    if right < RADIX:
+        return 0
+    if right < RADIX * RADIX:
+        return 1
+    return 2
+
+
+def higher_held(left: int, right: int, kind: int) -> bool:
+    """Deterministic fifth. No coefficient is a multiple of 5."""
+    return (left * 3 + right * 4 + 6 * kind) % 5 == 0
+
+
+def higher_edge_rows(exp: int) -> list[tuple[int, int, int]]:
+    """Boundary rows past the span-1000 band, and the all-nines row that sheds one.
+
+    The stay-inside row lands on the rung minus one. The top row is the full
+    family's largest sum. An exact power of ten on the right sheds one of the
+    rung when that power sits below the rung's own lower place.
+    """
+    rung = RADIX ** exp
+    lower = rung // RADIX
+    rows = [
+        (rung - 1, 1, rung),
+        (rung - 1, lower - 1, rung + lower - 2),
+        (rung - lower + 1, lower - 2, rung - 1),
+        (rung - 1, 11, rung + 10),
+    ]
+    for power in (1, 2, 3, 6, 9):
+        right = RADIX ** power
+        if right < lower:
+            rows.append((rung - right, right, rung))
+    return rows
+
+
+def census_higher_band() -> dict[int, dict[str, int]]:
+    """Span-1000 boundary at each rung 10^7..10^12."""
+    band = HIGHER_BAND
+    out: dict[int, dict[str, int]] = {}
+    for exp in HIGHER_EXPS:
+        rung = RADIX ** exp
+        keys = ("n", "ones", "place", "block", "ten", "carry", "low", "high", "edge")
+        total = {key: 0 for key in keys}
+        hold = {key: 0 for key in keys}
+        for left in range(rung - band + 1, rung):
+            for right in range(rung - left, band):
+                result = left + right
+                kind = higher_kind(right)
+                band_name = ("ones", "place", "block")[kind]
+                held = higher_held(left, right, kind)
+                total["n"] += 1
+                total[band_name] += 1
+                if held:
+                    hold["n"] += 1
+                    hold[band_name] += 1
+                if result % RADIX == 0:
+                    total["ten"] += 1
+                    if held:
+                        hold["ten"] += 1
+                if (left % RADIX) + (right % RADIX) >= RADIX:
+                    total["carry"] += 1
+                    if held:
+                        hold["carry"] += 1
+                if result < rung + RADIX:
+                    total["low"] += 1
+                    if held:
+                        hold["low"] += 1
+                if result >= rung + band - RADIX * RADIX:
+                    total["high"] += 1
+                    if held:
+                        hold["high"] += 1
+        edge = len(higher_edge_rows(exp))
+        total["edge"] = edge
+        hold["edge"] = 0
+        packed: dict[str, int] = {}
+        for key, value in total.items():
+            packed[key] = value
+            packed[key + "_train"] = value - hold[key]
+            packed[key + "_hold"] = hold[key]
+        packed["train"] = packed["n_train"]
+        packed["hold"] = packed["n_hold"]
+        packed["exp"] = exp
+        packed["rung"] = rung
+        out[exp] = packed
+    counted = sum(item["n"] for item in out.values())
+    print(f"higher band census {counted}", flush=True)
     return out
 
 

@@ -8,6 +8,10 @@ word holdout clears the coherence gate,
 the idle bonds still support the digit pathways,
 equality is the collapse of the consensus remainder,
 a two-step chain reads the first vessel as the next operand,
+a kind statement is that remainder after one step to the head,
+a depth-3 kind chain keeps the vessel on that head,
+a follow-up reads the kind the previous sentence left on the carrier,
+a counted sentence reads the number-word gauge it left beside that kind,
 and the generated pass scores order, product, a third step, names past nine,
 two-digit names re-entering as operands, two places in one expression,
 sums that leave 0..99, a hundred name used as an operand whose
@@ -45,8 +49,15 @@ from fsot_lattice.lattice import (
     AMP,
     WIDTH,
     Lattice,
+    apply_content_epoch,
     apply_digit_epoch,
     apply_word_epoch,
+    content_residual,
+    score_content,
+    score_counts,
+    score_follows,
+    score_kind_chains,
+    score_statements,
     chain_gap,
     clock_means,
     digit_drift,
@@ -68,10 +79,20 @@ from fsot_lattice.tasks import (
     REPEATED_LIMIT,
     all_chains,
     all_claims,
+    all_content,
+    all_counts,
+    all_follows,
+    all_kind_chains,
+    all_statements,
     all_triples,
     epoch_order,
     split_chains,
     split_claims,
+    split_content,
+    split_counts,
+    split_follows,
+    split_kind_chains,
+    split_statements,
     split_triples,
 )
 
@@ -80,6 +101,7 @@ RESULTS = APPARATUS / "results" / "lattice_run.json"
 ENGRAMS = APPARATUS / "data" / "engrams.json"
 DIGIT_EPOCHS = 500
 WORD_EPOCHS = 500
+CONTENT_EPOCHS = 500
 EXACT_FLOOR = 1.0
 GAUGE_FLOOR = 1e-4
 
@@ -306,6 +328,55 @@ def _run_phase(lattice: Lattice, train, hold, epochs: int, surface: str) -> list
     return history
 
 
+def train_content(lattice: Lattice) -> list[dict]:
+    """Learn the content gauges. Arithmetic gauges and bonds stay put."""
+    digits = dict(lattice.digit_value)
+    words = dict(lattice.word_value)
+    train, hold = split_content()
+    history = []
+    hits = 0.0
+    for epoch in range(CONTENT_EPOCHS):
+        mse, lr = apply_content_epoch(lattice, train, hits)
+        train_acc, train_n, _, _ = score_content(lattice, train)
+        hold_acc, hold_n, _, _ = score_content(lattice, hold)
+        residual = content_residual(lattice)
+        hits = train_acc * len(train)
+        row = {
+            "epoch": epoch,
+            "mse": mse,
+            "lr": lr,
+            "train_acc": train_acc,
+            "hold_acc": hold_acc,
+            "train_correct": train_n,
+            "hold_correct": hold_n,
+            "gauge_residual": residual,
+        }
+        history.append(row)
+        settled = (
+            residual < GAUGE_FLOOR
+            and train_acc >= EXACT_FLOOR
+            and hold_acc >= EXACT_FLOOR
+        )
+        if epoch % 10 == 0 or settled:
+            print(
+                f"content epoch {epoch:03d}  mse {mse:.6e}  lr {lr:.4f}  "
+                f"train {train_acc:.3f}  hold {hold_acc:.3f}  gauge {residual:.3e}",
+                flush=True,
+            )
+        if settled:
+            break
+    if lattice.digit_value != digits or lattice.word_value != words:
+        raise RuntimeError("content training moved an arithmetic gauge")
+    closed_acc, _correct, misses, stats = score_content(lattice, all_content())
+    if closed_acc < EXACT_FLOOR or misses:
+        raise RuntimeError(f"content table missed {misses[:3]}")
+    if stats["true_max_abs"] >= COLLAPSE / AMP or stats["false_min_abs"] <= COLLAPSE / AMP:
+        raise RuntimeError("content remainder crossed the drop")
+    if content_residual(lattice) >= GAUGE_FLOOR:
+        raise RuntimeError("content gauges left the offset line")
+    return history
+
+
 def run() -> dict:
     started = time.perf_counter()
     pin = require_live_pin()
@@ -344,6 +415,8 @@ def run() -> dict:
     # Lock the consolidated gauges for the word surface.
     lattice.digit_value = dict(lattice.frozen_digits or {})
     word_history = _run_phase(lattice, train, hold, WORD_EPOCHS, "word")
+    lattice.digit_value = dict(lattice.frozen_digits or {})
+    content_history = train_content(lattice)
     lattice.digit_value = dict(lattice.frozen_digits or {})
 
     digit_train_after, _, _ = score_digits(lattice, train)
@@ -416,8 +489,72 @@ def run() -> dict:
         digit_zero_chain,
         word_zero_chain,
     )
+    content_train, content_hold = split_content()
+    content_train_score = score_content(lattice, content_train)
+    content_hold_score = score_content(lattice, content_hold)
+    content_all = score_content(lattice, all_content())
+    content_ok = (
+        content_train_score[0] >= EXACT_FLOOR
+        and content_hold_score[0] >= EXACT_FLOOR
+        and content_all[3]["true_max_abs"] < eq_drop
+        and content_all[3]["false_min_abs"] > eq_drop
+        and content_residual(lattice) < GAUGE_FLOOR
+    )
+    stmt_train, stmt_hold = split_statements()
+    stmt_train_score = score_statements(lattice, stmt_train)
+    stmt_hold_score = score_statements(lattice, stmt_hold)
+    stmt_all = score_statements(lattice, all_statements())
+    statement_ok = (
+        stmt_train_score[0] >= EXACT_FLOOR
+        and stmt_hold_score[0] >= EXACT_FLOOR
+        and stmt_all[3]["true_max_abs"] < GAUGE_FLOOR
+        and stmt_all[3]["false_min_abs"] > eq_drop
+    )
+    kind_train, kind_hold = split_kind_chains()
+    kind_train_score = score_kind_chains(lattice, kind_train)
+    kind_hold_score = score_kind_chains(lattice, kind_hold)
+    kind_all = score_kind_chains(lattice, all_kind_chains())
+    kind_ok = (
+        kind_train_score[0] >= EXACT_FLOOR
+        and kind_hold_score[0] >= EXACT_FLOOR
+        and kind_all[3]["margin_min"] > eq_drop
+        and kind_all[3]["gap_max"] < GAUGE_FLOOR
+    )
+    follow_train, follow_hold = split_follows()
+    follow_train_score = score_follows(lattice, follow_train)
+    follow_hold_score = score_follows(lattice, follow_hold)
+    follow_all = score_follows(lattice, all_follows())
+    follow_ok = (
+        follow_train_score[0] >= EXACT_FLOOR
+        and follow_hold_score[0] >= EXACT_FLOOR
+        and follow_all[3]["true_max_abs"] < GAUGE_FLOOR
+        and follow_all[3]["carry_max"] < GAUGE_FLOOR
+        and follow_all[3]["false_min_abs"] > eq_drop
+    )
+    count_train, count_hold = split_counts()
+    count_train_score = score_counts(lattice, count_train)
+    count_hold_score = score_counts(lattice, count_hold)
+    count_all = score_counts(lattice, all_counts())
+    count_ok = (
+        count_train_score[0] >= EXACT_FLOOR
+        and count_hold_score[0] >= EXACT_FLOOR
+        and count_all[3]["true_max_abs"] < GAUGE_FLOOR
+        and count_all[3]["carry_max"] < GAUGE_FLOOR
+        and count_all[3]["false_min_abs"] > eq_drop
+    )
     promoted = (
-        retention_ok and word_ok and digit_ok and bonds_ok and equality_ok and composition_ok and applied["ok"]
+        retention_ok
+        and word_ok
+        and digit_ok
+        and bonds_ok
+        and equality_ok
+        and composition_ok
+        and content_ok
+        and statement_ok
+        and kind_ok
+        and follow_ok
+        and count_ok
+        and applied["ok"]
     )
 
     demos = []
@@ -448,6 +585,36 @@ def run() -> dict:
         "S_home_observed": s_obs,
         "digit_epochs": len(digit_history),
         "word_epochs": len(word_history),
+        "content_epochs": len(content_history),
+        "content_train": content_train_score[0],
+        "content_hold": content_hold_score[0],
+        "content_residual": content_residual(lattice),
+        "content_true_max": content_all[3]["true_max_abs"],
+        "content_false_min": content_all[3]["false_min_abs"],
+        "content_values": {word: lattice.content_value[word] for word in lattice.content_value},
+        "content_ok": content_ok,
+        "statement_train": stmt_train_score[0],
+        "statement_hold": stmt_hold_score[0],
+        "statement_true_max": stmt_all[3]["true_max_abs"],
+        "statement_false_min": stmt_all[3]["false_min_abs"],
+        "statement_ok": statement_ok,
+        "kind_train": kind_train_score[0],
+        "kind_hold": kind_hold_score[0],
+        "kind_margin_min": kind_all[3]["margin_min"],
+        "kind_gap_max": kind_all[3]["gap_max"],
+        "kind_ok": kind_ok,
+        "follow_train": follow_train_score[0],
+        "follow_hold": follow_hold_score[0],
+        "follow_true_max": follow_all[3]["true_max_abs"],
+        "follow_false_min": follow_all[3]["false_min_abs"],
+        "follow_carry_max": follow_all[3]["carry_max"],
+        "follow_ok": follow_ok,
+        "count_train": count_train_score[0],
+        "count_hold": count_hold_score[0],
+        "count_true_max": count_all[3]["true_max_abs"],
+        "count_false_min": count_all[3]["false_min_abs"],
+        "count_carry_max": count_all[3]["carry_max"],
+        "count_ok": count_ok,
         "digit_train_before": digit_train_before,
         "digit_hold_before": digit_hold_before,
         "digit_train_after": digit_train_after,
@@ -529,6 +696,7 @@ def run() -> dict:
         "wall_seconds": time.perf_counter() - started,
         "digit_history_tail": digit_history[-3:],
         "word_history_tail": word_history[-3:],
+        "content_history_tail": content_history[-3:],
     }
     write_engrams(ENGRAMS, lattice, pin, {"phase": "final", "promoted": promoted})
     RESULTS.parent.mkdir(parents=True, exist_ok=True)
@@ -557,6 +725,13 @@ def run() -> dict:
         f"tenpair {applied['ten_thou_pair_digit_hold']['acc']:.3f}  "
         f"hundthou {applied['hund_thou_digit_hold']['acc']:.3f}  "
         f"million {applied['million_digit_hold']['acc']:.3f}  "
+        f"billion {applied['rung9_digit_hold']['acc']:.3f}  "
+        f"trillion {applied['rung12_digit_hold']['acc']:.3f}/{applied['rung12_digit_hold']['max_gap']:.3e}  "
+        f"content {content_hold_score[0]:.3f}/{content_residual(lattice):.3e}  "
+        f"stmt {stmt_hold_score[0]:.3f}/{stmt_all[3]['true_max_abs']:.3e}  "
+        f"kind {kind_hold_score[0]:.3f}/{kind_all[3]['gap_max']:.3e}  "
+        f"follow {follow_hold_score[0]:.3f}/{follow_all[3]['carry_max']:.3e}  "
+        f"count {count_hold_score[0]:.3f}/{count_all[3]['carry_max']:.3e}  "
         f"bonds {int(bond_meta['kept_bonds'])}  confidence {confidence:.3f}  "
         f"wall {time.perf_counter() - started:.2f}s",
         flush=True,

@@ -1,11 +1,15 @@
-/* Same attend as consensus.py and lattice.consensus_quantity.
+/* Same attend as consensus.py and lattice._consensus_quantity_py.
 
-   Operation order matches the Python loops. Build without fast-math and
-   without fused multiply-add so the doubles stay on that path.
+   A quantity key is one scale written on a carrier. Its projection is the
+   trit weight times that scale, so the read is the sum of the scales. The
+   width-60 dot product is that same real number and drops the low digits
+   once a place reaches the billions. Build without fast-math and without
+   fused multiply-add.
 */
 
 #include <math.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #if defined(_WIN32)
 #define EXPORT __declspec(dllexport)
@@ -83,23 +87,20 @@ static int key_contributes(
     return 1;
 }
 
-static double axis_quantity(const double *state, int active, const double *axis, int width) {
-    double denom = 0.0;
-    double scale = 0.0;
-    int i;
-    if (active == 0) {
+/* Trit weight times the scale. The carrier loop stays in the gate. */
+static double weighted_scale(
+    const double *query,
+    const double *carrier,
+    double scale,
+    int width,
+    double collapse,
+    double gate
+) {
+    double weight = 0.0;
+    if (!key_contributes(query, carrier, scale, width, collapse, gate, &weight)) {
         return 0.0;
     }
-    for (i = 0; i < width; i++) {
-        denom += axis[i] * axis[i];
-    }
-    if (denom == 0.0) {
-        return 0.0;
-    }
-    for (i = 0; i < width; i++) {
-        scale += state[i] * axis[i];
-    }
-    return (scale / denom) * (double)active;
+    return weight * scale;
 }
 
 EXPORT double fsot_consensus_quantity(
@@ -112,49 +113,19 @@ EXPORT double fsot_consensus_quantity(
     double collapse,
     double gate
 ) {
-    double plus_state[64];
-    double minus_state[64];
-    double weight;
-    int plus_active = 0;
-    int minus_active = 0;
-    int i;
+    double plus_q;
+    double minus_q = 0.0;
     if (width <= 0 || width > 64 || plus == NULL || minus == NULL) {
         return 0.0;
     }
-    for (i = 0; i < width; i++) {
-        plus_state[i] = 0.0;
-        minus_state[i] = 0.0;
+    plus_q = weighted_scale(plus, plus, left, width, collapse, gate);
+    if (sign > 0) {
+        plus_q += weighted_scale(plus, plus, right, width, collapse, gate);
     }
-    if (key_contributes(plus, plus, left, width, collapse, gate, &weight)) {
-        plus_active += 1;
-        for (i = 0; i < width; i++) {
-            plus_state[i] += weight * (left * plus[i]);
-        }
+    if (sign < 0) {
+        minus_q = weighted_scale(minus, minus, right, width, collapse, gate);
     }
-    if (sign > 0 && key_contributes(plus, plus, right, width, collapse, gate, &weight)) {
-        plus_active += 1;
-        for (i = 0; i < width; i++) {
-            plus_state[i] += weight * (right * plus[i]);
-        }
-    }
-    if (plus_active > 0) {
-        for (i = 0; i < width; i++) {
-            plus_state[i] /= (double)plus_active;
-        }
-    }
-    if (sign < 0 && key_contributes(minus, minus, right, width, collapse, gate, &weight)) {
-        minus_active += 1;
-        for (i = 0; i < width; i++) {
-            minus_state[i] += weight * (right * minus[i]);
-        }
-    }
-    if (minus_active > 0) {
-        for (i = 0; i < width; i++) {
-            minus_state[i] /= (double)minus_active;
-        }
-    }
-    return axis_quantity(plus_state, plus_active, plus, width)
-        - axis_quantity(minus_state, minus_active, minus, width);
+    return plus_q - minus_q;
 }
 
 static void nearest_detail(
@@ -210,6 +181,10 @@ static int shed(
     double drop
 ) {
     int count = 0;
+    /* A zero step is a rung the caller left out. Skipping it keeps the lower read. */
+    if (step == 0.0) {
+        return 0;
+    }
     while (count < cap) {
         double nxt = fsot_consensus_quantity(
             *quantity, step, minus_sign, plus, minus, width, collapse, gate
@@ -233,6 +208,12 @@ EXPORT void fsot_read_place(
     double ten_thousand,
     double hundred_thousand,
     double million,
+    double ten_million,
+    double hundred_million,
+    double billion,
+    double ten_billion,
+    double hundred_billion,
+    double trillion,
     const double *plus,
     const double *minus,
     int width,
@@ -240,42 +221,63 @@ EXPORT void fsot_read_place(
     double gate,
     double drop,
     int minus_sign,
-    int *named,
+    int64_t *named,
     double *remainder,
     double *margin,
     double *dist
 ) {
     int cap = n > 0 ? n - 1 : 0;
-    int millions;
-    int hundred_thousands;
-    int ten_thousands;
-    int thousands;
-    int hundreds;
-    int tens;
+    int counts[13];
+    int i;
     int units = 0;
+    int64_t named_v = 0;
+    int64_t span;
     double margin_v = 0.0;
     double dist_v = 0.0;
-    millions = shed(
+    counts[0] = shed(
+        &quantity, trillion, cap, minus_sign, plus, minus, width, collapse, gate, drop
+    );
+    counts[1] = shed(
+        &quantity, hundred_billion, cap, minus_sign, plus, minus, width, collapse, gate, drop
+    );
+    counts[2] = shed(
+        &quantity, ten_billion, cap, minus_sign, plus, minus, width, collapse, gate, drop
+    );
+    counts[3] = shed(
+        &quantity, billion, cap, minus_sign, plus, minus, width, collapse, gate, drop
+    );
+    counts[4] = shed(
+        &quantity, hundred_million, cap, minus_sign, plus, minus, width, collapse, gate, drop
+    );
+    counts[5] = shed(
+        &quantity, ten_million, cap, minus_sign, plus, minus, width, collapse, gate, drop
+    );
+    counts[6] = shed(
         &quantity, million, cap, minus_sign, plus, minus, width, collapse, gate, drop
     );
-    hundred_thousands = shed(
+    counts[7] = shed(
         &quantity, hundred_thousand, cap, minus_sign, plus, minus, width, collapse, gate, drop
     );
-    ten_thousands = shed(
+    counts[8] = shed(
         &quantity, ten_thousand, cap, minus_sign, plus, minus, width, collapse, gate, drop
     );
-    thousands = shed(
+    counts[9] = shed(
         &quantity, thousand, cap, minus_sign, plus, minus, width, collapse, gate, drop
     );
-    hundreds = shed(
+    counts[10] = shed(
         &quantity, hundred, cap, minus_sign, plus, minus, width, collapse, gate, drop
     );
-    tens = shed(&quantity, ten, cap, minus_sign, plus, minus, width, collapse, gate, drop);
+    counts[11] = shed(&quantity, ten, cap, minus_sign, plus, minus, width, collapse, gate, drop);
     if (n > 0 && gauges != NULL) {
         nearest_detail(quantity, gauges, n, &units, &margin_v, &dist_v);
     }
+    counts[12] = units;
+    span = (int64_t)n;
+    for (i = 0; i < 13; i++) {
+        named_v = named_v * span + (int64_t)counts[i];
+    }
     if (named != NULL) {
-        *named = ((((((millions * n + hundred_thousands) * n + ten_thousands) * n + thousands) * n + hundreds) * n + tens) * n + units);
+        *named = named_v;
     }
     if (remainder != NULL) {
         *remainder = quantity;
@@ -327,6 +329,12 @@ static double g_thousand = 0.0;
 static double g_ten_thousand = 0.0;
 static double g_hundred_thousand = 0.0;
 static double g_million = 0.0;
+static double g_ten_million = 0.0;
+static double g_hundred_million = 0.0;
+static double g_billion = 0.0;
+static double g_ten_billion = 0.0;
+static double g_hundred_billion = 0.0;
+static double g_trillion = 0.0;
 static double g_plus[64];
 static double g_minus[64];
 static double g_gauges[16];
@@ -340,6 +348,12 @@ EXPORT int fsot_bind_read(
     double ten_thousand,
     double hundred_thousand,
     double million,
+    double ten_million,
+    double hundred_million,
+    double billion,
+    double ten_billion,
+    double hundred_billion,
+    double trillion,
     const double *plus,
     const double *minus,
     int width,
@@ -371,6 +385,12 @@ EXPORT int fsot_bind_read(
     g_ten_thousand = ten_thousand;
     g_hundred_thousand = hundred_thousand;
     g_million = million;
+    g_ten_million = ten_million;
+    g_hundred_million = hundred_million;
+    g_billion = billion;
+    g_ten_billion = ten_billion;
+    g_hundred_billion = hundred_billion;
+    g_trillion = trillion;
     g_collapse = collapse;
     g_gate = gate;
     g_drop = drop;
@@ -385,7 +405,7 @@ EXPORT void fsot_consensus_read(
     double right,
     int sign,
     double *quantity,
-    int *named,
+    int64_t *named,
     double *remainder,
     double *margin,
     double *dist
@@ -405,6 +425,12 @@ EXPORT void fsot_consensus_read(
             g_ten_thousand,
             g_hundred_thousand,
             g_million,
+            g_ten_million,
+            g_hundred_million,
+            g_billion,
+            g_ten_billion,
+            g_hundred_billion,
+            g_trillion,
             g_plus,
             g_minus,
             g_width,

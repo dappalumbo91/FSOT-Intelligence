@@ -9,7 +9,13 @@ operand, two thousand names in one expression, sums that leave
 0..9999, a ten-thousand name used as an operand whose result
 stays inside 0..10999, two ten-thousand names whose difference
 stays inside 0..999, sums that leave 0..99999, and sums that leave
-0..999999 are produced here and scored together. They add no gauges.
+0..999999 are produced here and scored together. Ten million through a
+trillion are that same shed, proved on a checked band. They add no gauges.
+Ten content words add one gauge each. A question is the equality read.
+A composed statement is that read after one kind step. A depth-3 chain
+takes the step three times. The kind table adds no gauges.
+A follow-up reads the working carrier left by the sentence before it.
+A counted sentence leaves a number-word gauge beside that kind.
 """
 
 from __future__ import annotations
@@ -17,19 +23,62 @@ from __future__ import annotations
 import time
 
 from fsot_lattice.engine import COLLAPSE, K
-from fsot_lattice.lattice import AMP, Lattice
+from fsot_lattice.lattice import (
+    AMP,
+    Lattice,
+    content_residual,
+    play_count,
+    play_follow,
+    score_content,
+    score_counts,
+    score_follows,
+    score_kind_chains,
+    score_statements,
+)
 from fsot_lattice.tasks import (
     OP_WORD,
     RADIX,
+    ANSWER_PRIORS,
+    BILLION,
+    CONTENT_KIND,
+    CONTENT_WORDS,
+    COUNT_WORDS,
+    DIGITS,
+    KIND_HEADS,
+    KIND_STEPS,
+    HIGHER_BAND,
+    HIGHER_EXPS,
     HUNDRED_THOUSAND,
     HUNDRED_THOUSAND_CAP,
     MILLION,
     MILLION_CAP,
+    TRILLION,
+    TRILLION_CAP,
     TEN_THOUSAND_CAP,
     THOUSAND_CAP,
     THOUSAND_SPAN,
     WORD_OF,
+    all_content,
+    all_counts,
+    all_follows,
+    all_kind_chains,
+    all_statements,
+    article,
+    content_held,
+    content_kind,
+    count_held,
+    follow_held,
+    kind_held,
+    split_content,
+    split_counts,
+    split_follows,
+    split_kind_chains,
+    split_statements,
+    statement_held,
     Claim,
+    Counted,
+    FollowUp,
+    KindChain,
     HundredOp,
     HundredSum,
     HundredThousandSum,
@@ -45,10 +94,12 @@ from fsot_lattice.tasks import (
     PlaceStep,
     Product,
     Span,
+    Statement,
     all_hundred_ops,
     all_hundred_sums,
     all_lexemes,
     all_thousand_sums,
+    census_higher_band,
     census_hundred_thousand_sums,
     census_million_sums,
     census_ten_thousand_ops,
@@ -70,6 +121,8 @@ from fsot_lattice.tasks import (
     split_hundred_sums,
     split_lexemes,
     split_thousand_sums,
+    higher_edge_rows,
+    higher_kind,
     hundred_thousand_held,
     hundred_thousand_kind,
     million_kind,
@@ -88,6 +141,10 @@ from fsot_lattice.tasks import (
 DROP = COLLAPSE / AMP
 # Same floor as the additive gauge. A generated fold has to land inside it.
 GAUGE_FLOOR = 1e-4
+# The scored place is the ten-step counted by its power of ten. A repeated
+# sum of that rung can sit off the product. A missed count misses by a whole
+# rung. The row gap stays on GAUGE_FLOOR.
+HIGHER_FOLD = 1e-2
 
 
 def _partition(rows, train, hold, name: str) -> None:
@@ -141,6 +198,11 @@ def check_generated(lattice: Lattice) -> None:
     _check_ten_thou_pairs(lattice)
     _check_hundred_thousands(lattice)
     _check_millions(lattice)
+    _check_higher(lattice)
+    _check_content(lattice)
+    _check_statements(lattice)
+    _check_follows(lattice)
+    _check_counts(lattice)
 
 
 def _check_lexicon(lattice: Lattice) -> None:
@@ -710,9 +772,9 @@ def _check_thousands(lattice: Lattice) -> None:
     if (
         number_name(11000) != "eleven thousand"
         or number_name(110000) != "one hundred ten thousand"
-        or number_name(1100000) != "?"
+        or number_name(1100000) != "one million one hundred thousand"
     ):
-        raise RuntimeError("the spelling table left eleven thousand or passed one million ninety-nine thousand")
+        raise RuntimeError("the spelling table left eleven thousand or one million one hundred thousand")
     if decimal_name(1000) != "1000":
         raise RuntimeError("the decimal thousand left the integer")
     step = K
@@ -1219,9 +1281,9 @@ def _check_thou_pairs(lattice: Lattice) -> None:
     if (
         number_name(11000) != "eleven thousand"
         or number_name(110000) != "one hundred ten thousand"
-        or number_name(1100000) != "?"
+        or number_name(1100000) != "one million one hundred thousand"
     ):
-        raise RuntimeError("the spelling table left eleven thousand or passed one million ninety-nine thousand")
+        raise RuntimeError("the spelling table left eleven thousand or one million one hundred thousand")
     if number_name(0) != "zero":
         raise RuntimeError("a cancelled thousand pair lost the word zero")
     spells = (
@@ -1485,8 +1547,8 @@ def _check_ten_thousands(lattice: Lattice) -> None:
             raise RuntimeError(f"{number} spelled {got}")
     if number_name(11000) != "eleven thousand" or number_name(12000) != "twelve thousand":
         raise RuntimeError("eleven thousand or twelve thousand left the spelling table")
-    if number_name(110000) != "one hundred ten thousand" or number_name(1100000) != "?":
-        raise RuntimeError("a name past one million ninety-nine thousand nine hundred ninety-nine entered the table")
+    if number_name(110000) != "one hundred ten thousand" or number_name(1100000) != "one million one hundred thousand":
+        raise RuntimeError("one hundred ten thousand or one million one hundred thousand left the spelling table")
     if decimal_name(10000) != "10000":
         raise RuntimeError("the decimal ten thousand left the integer")
     counts = census_ten_thousand_sums()
@@ -1669,9 +1731,9 @@ def _check_ten_thou_ops(lattice: Lattice) -> None:
     if (
         number_name(11000) != "eleven thousand"
         or number_name(110000) != "one hundred ten thousand"
-        or number_name(1100000) != "?"
+        or number_name(1100000) != "one million one hundred thousand"
     ):
-        raise RuntimeError("the spelling table left eleven thousand or passed one million ninety-nine thousand")
+        raise RuntimeError("the spelling table left eleven thousand or one million one hundred thousand")
     if decimal_name(10000) != "10000":
         raise RuntimeError("the decimal ten-thousand operand left the integer")
     counts = census_ten_thousand_ops()
@@ -2472,6 +2534,33 @@ def _finish_running(bucket: dict) -> dict:
     }
 
 
+def _blank_higher() -> dict:
+    bucket = _blank_running()
+    bucket["max_gap"] = 0.0
+    return bucket
+
+
+def _note_higher(
+    bucket: dict,
+    ok: bool,
+    gap: float,
+    margin: float,
+    dist: float,
+    remainder: float,
+    exact_ten: bool,
+    miss: str | None,
+) -> None:
+    _note_running(bucket, ok, gap, margin, dist, remainder, exact_ten, miss)
+    if gap > bucket["max_gap"]:
+        bucket["max_gap"] = gap
+
+
+def _finish_higher(bucket: dict) -> dict:
+    done = _finish_running(bucket)
+    done["max_gap"] = bucket["max_gap"]
+    return done
+
+
 def _thousand_spell(named: int, surface: str) -> str:
     if named < 0 or named >= RADIX ** 4:
         return "?"
@@ -2956,12 +3045,21 @@ def _thou_note(
         note(buckets["block"], ok, gap, margin, dist, remainder, exact, miss)
 
 
-def _bound_reader(gauges, ten, hundred, thousand, ten_thousand, hundred_thousand=None, million=None):
+def _bound_reader(
+    gauges,
+    ten,
+    hundred,
+    thousand,
+    ten_thousand,
+    hundred_thousand=None,
+    million=None,
+    above=None,
+):
     """One C call per row when the attend can hold this surface. Otherwise None."""
     from fsot_lattice import fast_attend
 
     if fast_attend.bind_read(
-        gauges, ten, hundred, thousand, ten_thousand, hundred_thousand, million
+        gauges, ten, hundred, thousand, ten_thousand, hundred_thousand, million, above
     ):
         return fast_attend.consensus_read
     return None
@@ -3770,8 +3868,8 @@ def _check_hundred_thousands(lattice: Lattice) -> None:
             raise RuntimeError(f"{number} spelled {got}")
     if number_name(110000) != "one hundred ten thousand" or number_name(120000) != "one hundred twenty thousand":
         raise RuntimeError("one hundred ten thousand left the spelling table")
-    if number_name(1100000) != "?" or number_name(1200000) != "?":
-        raise RuntimeError("a name past one million ninety-nine thousand nine hundred ninety-nine entered the table")
+    if number_name(1100000) != "one million one hundred thousand" or number_name(1200000) != "one million two hundred thousand":
+        raise RuntimeError("one million one hundred thousand left the spelling table")
     if decimal_name(100000) != "100000":
         raise RuntimeError("the decimal hundred thousand left the integer")
     counts = census_hundred_thousand_sums()
@@ -4108,8 +4206,8 @@ def _check_millions(lattice: Lattice) -> None:
         got = number_name(number)
         if got != spelling:
             raise RuntimeError(f"{number} spelled {got}")
-    if number_name(1100000) != "?" or number_name(1200000) != "?":
-        raise RuntimeError("a name past one million ninety-nine thousand nine hundred ninety-nine entered the table")
+    if number_name(1100000) != "one million one hundred thousand" or number_name(1200000) != "one million two hundred thousand":
+        raise RuntimeError("one million one hundred thousand left the spelling table")
     if decimal_name(1000000) != "1000000":
         raise RuntimeError("the decimal million left the integer")
     counts = census_million_sums()
@@ -4288,6 +4386,559 @@ def _check_millions(lattice: Lattice) -> None:
             raise RuntimeError(f"{row.digit_prompt()}{row.digit_answer()} put a zero or a million on the right")
         if row.result != row.left + row.right or not (MILLION <= row.result < MILLION_CAP):
             raise RuntimeError(f"{row.digit_prompt()}{row.digit_answer()} left 1000000..1099998")
+
+
+def _check_higher(lattice: Lattice) -> None:
+    """Ten million through a trillion. Each rung is the previous one counted ten times.
+
+    The spelling table reaches one trillion ninety-nine billion. The million
+    answers still stop at 1099999. Names are checked on a pure line and on the
+    fresh digit gauges. The scored band carries the 1e-4 row gap.
+    """
+    spells = (
+        (10_000_000, "ten million"),
+        (100_000_000, "one hundred million"),
+        (BILLION, "one billion"),
+        (10_000_000_000, "ten billion"),
+        (100_000_000_000, "one hundred billion"),
+        (TRILLION, "one trillion"),
+        (1_100_000, "one million one hundred thousand"),
+        (1_200_000, "one million two hundred thousand"),
+        (BILLION + 1, "one billion one"),
+        (TRILLION + 1, "one trillion one"),
+    )
+    for number, spelling in spells:
+        got = number_name(number)
+        if got != spelling:
+            raise RuntimeError(f"{number} spelled {got}")
+    nines = (
+        "nine hundred ninety-nine billion "
+        "nine hundred ninety-nine million "
+        "nine hundred ninety-nine thousand "
+        "nine hundred ninety-nine"
+    )
+    if number_name(TRILLION - 1) != nines:
+        raise RuntimeError(f"{TRILLION - 1} spelled {number_name(TRILLION - 1)}")
+    if number_name(TRILLION_CAP) != "?" or number_name(1_200_000_000_000) != "?":
+        raise RuntimeError("one trillion one hundred billion entered the spelling table")
+    if higher_kind(1) != 0 or higher_kind(10) != 1 or higher_kind(100) != 2:
+        raise RuntimeError("higher kind left digit, place, and block")
+    counts = census_higher_band()
+    band_n = (HIGHER_BAND - 1) * HIGHER_BAND // 2
+    for exp in HIGHER_EXPS:
+        rung = RADIX ** exp
+        row = counts[exp]
+        if row["n"] != band_n:
+            raise RuntimeError(f"10^{exp} band left the {band_n} boundary sums")
+        if row["ones"] + row["place"] + row["block"] != row["n"]:
+            raise RuntimeError(f"10^{exp} bands do not cover the family")
+        edges = higher_edge_rows(exp)
+        if row["edge"] != len(edges):
+            raise RuntimeError(f"10^{exp} edge list changed length")
+        if row["train"] + row["hold"] != row["n"] or row["train"] == 0 or row["hold"] == 0:
+            raise RuntimeError(f"10^{exp} split left the band")
+        lower = rung // RADIX
+        if (rung - 1, 1, rung) not in edges:
+            raise RuntimeError(f"10^{exp} edge missed the all-nines row")
+        if (rung - 1, lower - 1, rung + lower - 2) not in edges:
+            raise RuntimeError(f"10^{exp} edge missed the top row")
+        if (rung - lower + 1, lower - 2, rung - 1) not in edges:
+            raise RuntimeError(f"10^{exp} edge missed the stay-inside row")
+        for left, right, result in edges:
+            if result != left + right:
+                raise RuntimeError(f"10^{exp} edge {left}+{right} left its sum")
+    step = K
+    gauges = [index * step for index in range(RADIX)]
+    ten = gauges[9] + gauges[1]
+    steps = [0.0, ten]
+    for _ in range(11):
+        steps.append(steps[-1] * RADIX)
+    above = (steps[7], steps[8], steps[9], steps[10], steps[11], steps[12])
+    plus = 1
+
+    def _prop_alg(number: int) -> float:
+        total = 0.0
+        rest = number
+        for power in range(12, 0, -1):
+            place = 10 ** power
+            digit = rest // place
+            if digit:
+                rest -= digit * place
+                total += digit * (10 ** (power - 1)) * ten
+        if rest:
+            total += gauges[rest]
+        return total
+
+    def _prop_read(quantity: float) -> tuple[int, float, float]:
+        named, remainder, margin, _dist = lattice.read_place(
+            quantity,
+            "digit",
+            steps[1],
+            gauges,
+            steps[2],
+            steps[3],
+            steps[4],
+            steps[5],
+            steps[6],
+            above,
+        )
+        return named, remainder, margin
+
+    prev = steps[6]
+    for exp in HIGHER_EXPS:
+        rung = RADIX ** exp
+        folded = lattice.fold_steps(0.0, [(plus, prev) for _ in range(RADIX)])
+        identity = abs(folded - steps[exp])
+        if identity >= HIGHER_FOLD:
+            raise RuntimeError(f"synthetic 10^{exp} left the ten-times line by {identity}")
+        named, remainder, margin = _prop_read(steps[exp])
+        if named != rung or margin <= DROP or abs(remainder) >= DROP:
+            raise RuntimeError(f"synthetic 10^{exp} read {named}")
+        alone = lattice.compose_integer(rung - 1, steps, gauges)
+        named, _remainder, margin = _prop_read(alone)
+        if named != rung - 1 or margin <= DROP:
+            raise RuntimeError(f"synthetic {rung - 1} read {named}")
+        left_q = alone
+        right_q = lattice.compose_integer(1, steps, gauges)
+        quantity = lattice.consensus_quantity(left_q, right_q, plus)
+        named, _remainder, margin = _prop_read(quantity)
+        gap = abs(quantity - (_prop_alg(rung - 1) + _prop_alg(1)))
+        if named != rung or margin <= DROP:
+            raise RuntimeError(f"synthetic {rung - 1}+1 read {named}")
+        if gap >= DROP:
+            raise RuntimeError(f"synthetic {rung - 1}+1 left the algebraic sum by {gap}")
+        prev = steps[exp]
+    live = lattice.place_steps("digit")
+    live_gauges = lattice.gauge_line("digit")
+    live_above = (live[7], live[8], live[9], live[10], live[11], live[12])
+
+    def _live_named(quantity: float) -> int:
+        return lattice.read_place(
+            quantity,
+            "digit",
+            live[1],
+            live_gauges,
+            live[2],
+            live[3],
+            live[4],
+            live[5],
+            live[6],
+            live_above,
+        )[0]
+
+    prev_live = live[6]
+    for exp in HIGHER_EXPS:
+        rung = RADIX ** exp
+        identity = abs(live[exp] - prev_live * RADIX)
+        if identity >= HIGHER_FOLD:
+            raise RuntimeError(f"fresh 10^{exp} left the ten-times line by {identity}")
+        if _live_named(live[exp]) != rung:
+            raise RuntimeError(f"fresh 10^{exp} read {_live_named(live[exp])}")
+        stay = lattice.compose_integer(rung - 1, live, live_gauges)
+        if _live_named(stay) != rung - 1:
+            raise RuntimeError(f"fresh {rung - 1} shed the next rung")
+        got = lattice.predict_power_sum(rung - 1, 1, "digit")
+        if got != decimal_name(rung):
+            raise RuntimeError(f"fresh {rung - 1}+1 read {got}")
+        prev_live = live[exp]
+
+
+def _check_content(lattice: Lattice) -> None:
+    """Ten content words. Equality is the difference of their gauges.
+
+    The fresh gauges sit together at K, so this check scores the offset
+    line and then puts those gauges back.
+    """
+    known = set(DIGITS) | set(WORD_OF.values()) | set(ANSWER_PRIORS)
+    known |= {"plus", "minus", "equals", "what", "is", "hundred", "thousand", "million", "billion", "trillion"}
+    if len(CONTENT_WORDS) != len(set(CONTENT_WORDS)):
+        raise RuntimeError("a content word was repeated")
+    if any(word in known for word in CONTENT_WORDS):
+        raise RuntimeError("a content word collides with a number or a prior")
+    rows = all_content()
+    train, hold = split_content()
+    if len(rows) != len(CONTENT_WORDS) ** 2:
+        raise RuntimeError("the content table left the ordered pairs")
+    if set(train) | set(hold) != set(rows) or set(train) & set(hold):
+        raise RuntimeError("the content split is not a partition")
+    if not train or not hold:
+        raise RuntimeError("the content split dropped a side")
+    if not any(row.holds() for row in train) or not any(row.holds() for row in hold):
+        raise RuntimeError("the content split hid every same-word question on one side")
+    if not any(not row.holds() for row in train) or not any(not row.holds() for row in hold):
+        raise RuntimeError("the content split hid every different-word question on one side")
+    covered = {name for row in train for name in (row.left, row.right)}
+    if covered != set(CONTENT_WORDS):
+        raise RuntimeError("the content train split missed a word")
+    index = {word: place for place, word in enumerate(CONTENT_WORDS)}
+    if all(content_held(0, index[word]) for word in CONTENT_WORDS):
+        raise RuntimeError("the content hold hash parked every cat question")
+    if K <= DROP:
+        raise RuntimeError("the offset step does not clear the drop")
+    saved = dict(lattice.content_value)
+    try:
+        for place, name in enumerate(CONTENT_WORDS):
+            lattice.content_value[name] = K * (place + 1)
+        acc, _correct, misses, stats = score_content(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"offset content read {misses[:3]}")
+        if stats["true_max_abs"] >= DROP or stats["false_min_abs"] <= DROP:
+            raise RuntimeError(
+                f"offset content margin {stats['true_max_abs']} / {stats['false_min_abs']}"
+            )
+    finally:
+        lattice.content_value.update(saved)
+
+
+def _score_content(lattice: Lattice) -> dict:
+    """Train, hold, and the closed content table. One consensus each."""
+    train, hold = split_content()
+    closed = all_content()
+
+    def pack(rows: list) -> dict:
+        acc, correct, misses, stats = score_content(lattice, rows)
+        return {
+            "acc": acc,
+            "correct": correct,
+            "n": len(rows),
+            "misses": misses,
+            "true_max_abs": stats.get("true_max_abs", 0.0),
+            "false_min_abs": stats.get("false_min_abs", 0.0),
+        }
+
+    return {
+        "content_train": pack(train),
+        "content_hold": pack(hold),
+        "content_closed": pack(closed),
+        "content_residual": content_residual(lattice),
+    }
+
+
+def _check_statements(lattice: Lattice) -> None:
+    """Kind statements and the depth-3 chain, scored on the offset line.
+
+    Fresh content gauges sit together at K. This check writes the offset
+    line, scores the closed tables, and puts those gauges back.
+    """
+    if len(CONTENT_KIND) != len(CONTENT_WORDS):
+        raise RuntimeError("the kind table left the content lexicon")
+    if set(CONTENT_KIND) != set(KIND_HEADS):
+        raise RuntimeError("the kind heads left the kind table")
+    for place, word in enumerate(CONTENT_WORDS):
+        kind = CONTENT_KIND[place]
+        if kind not in CONTENT_WORDS:
+            raise RuntimeError(f"{word} named a kind outside the lexicon")
+        if content_kind(kind) != kind:
+            raise RuntimeError(f"{kind} is not its own kind")
+        if CONTENT_WORDS.index(kind) < place:
+            raise RuntimeError(f"{word} stepped backward to {kind}")
+    if tuple(dict.fromkeys(CONTENT_KIND)) != KIND_HEADS:
+        raise RuntimeError("the kind heads left the group order")
+    if KIND_STEPS != 3:
+        raise RuntimeError("the kind chain left depth 3")
+    if article("cat") != "a" or article("animal") != "an" or article("oak") != "an":
+        raise RuntimeError("the article prior left a and an")
+    sample = Statement("cat", "animal")
+    if sample.prompt() != "a cat is an animal" or sample.answer() != "yes":
+        raise RuntimeError("a cat is an animal left the statement table")
+    if Statement("oak", "plant").prompt() != "an oak is a plant":
+        raise RuntimeError("an oak is a plant left the statement table")
+    if KindChain("cat").prompt() != "a cat is an animal is an animal is an animal":
+        raise RuntimeError("the cat chain left three kind steps")
+    rows = all_statements()
+    train, hold = split_statements()
+    if len(rows) != len(CONTENT_WORDS) ** 2:
+        raise RuntimeError("the statement table left the subject-stated pairs")
+    if set(train) | set(hold) != set(rows) or set(train) & set(hold):
+        raise RuntimeError("the statement split is not a partition")
+    if len(hold) * 5 != len(rows) or not train:
+        raise RuntimeError("the statement split left the fifth")
+    if not any(row.holds() for row in train) or not any(row.holds() for row in hold):
+        raise RuntimeError("the statement split hid every true kind on one side")
+    if not any(not row.holds() for row in train) or not any(not row.holds() for row in hold):
+        raise RuntimeError("the statement split hid every false kind on one side")
+    covered = {row.subject for row in train}
+    if covered != set(CONTENT_WORDS):
+        raise RuntimeError("the statement train split missed a subject")
+    true_heads = {row.stated for row in train if row.holds()}
+    if true_heads != set(KIND_HEADS):
+        raise RuntimeError("the statement train split missed a kind head")
+    index = {word: place for place, word in enumerate(CONTENT_WORDS)}
+    if all(statement_held(0, index[word]) for word in CONTENT_WORDS):
+        raise RuntimeError("the statement hold hash parked every cat question")
+    chains = all_kind_chains()
+    chain_train, chain_hold = split_kind_chains()
+    if len(chains) != len(CONTENT_WORDS):
+        raise RuntimeError("the kind chain left a subject")
+    if set(chain_train) | set(chain_hold) != set(chains) or set(chain_train) & set(chain_hold):
+        raise RuntimeError("the kind chain split is not a partition")
+    if len(chain_hold) * 5 != len(chains) or not chain_train:
+        raise RuntimeError("the kind chain split left the fifth")
+    chain_heads = {row.answer() for row in chain_train}
+    if not set(KIND_HEADS) <= chain_heads:
+        raise RuntimeError("the kind chain train split missed a head")
+    if kind_held(index["rock"]) or kind_held(index["water"]):
+        raise RuntimeError("the kind chain hold took the only rock or water subject")
+    if K <= DROP:
+        raise RuntimeError("the offset step does not clear the drop")
+    saved = dict(lattice.content_value)
+    try:
+        for place, name in enumerate(CONTENT_WORDS):
+            lattice.content_value[name] = K * (place + 1)
+        for word in CONTENT_WORDS:
+            head = lattice.kind_head_value(lattice.content_value[word])
+            kind = content_kind(word)
+            if head != lattice.content_value[kind]:
+                raise RuntimeError(f"{word} stepped to a head other than {kind}")
+            landed = lattice.kind_step(lattice.content_value[word])
+            if abs(landed - lattice.content_value[kind]) >= GAUGE_FLOOR:
+                raise RuntimeError(f"{word} kind step left {kind}")
+            folded = lattice.kind_chain_quantity(word)
+            if abs(folded - landed) >= GAUGE_FLOOR:
+                raise RuntimeError(f"{word} depth-3 chain left the first landing")
+        acc, _correct, misses, stats = score_statements(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"offset statement read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR or stats["false_min_abs"] <= DROP:
+            raise RuntimeError(
+                f"offset statement margin {stats['true_max_abs']} / {stats['false_min_abs']}"
+            )
+        chain_acc, _n, chain_misses, chain_stats = score_kind_chains(lattice, chains)
+        if chain_acc != 1.0 or chain_misses:
+            raise RuntimeError(f"offset kind chain read {chain_misses[:3]}")
+        if chain_stats["margin_min"] <= DROP or chain_stats["gap_max"] >= GAUGE_FLOOR:
+            raise RuntimeError(
+                f"offset kind chain margin {chain_stats['margin_min']} / {chain_stats['gap_max']}"
+            )
+    finally:
+        lattice.content_value.update(saved)
+
+
+def _score_statements(lattice: Lattice) -> dict:
+    """Train, hold, and the closed kind tables."""
+    train, hold = split_statements()
+    closed = all_statements()
+    chain_train, chain_hold = split_kind_chains()
+    chain_closed = all_kind_chains()
+
+    def pack_statement(rows: list) -> dict:
+        acc, correct, misses, stats = score_statements(lattice, rows)
+        return {
+            "acc": acc,
+            "correct": correct,
+            "n": len(rows),
+            "misses": misses,
+            "true_max_abs": stats.get("true_max_abs", 0.0),
+            "false_min_abs": stats.get("false_min_abs", 0.0),
+        }
+
+    def pack_chain(rows: list) -> dict:
+        acc, correct, misses, stats = score_kind_chains(lattice, rows)
+        return {
+            "acc": acc,
+            "correct": correct,
+            "n": len(rows),
+            "misses": misses,
+            "margin_min": stats.get("margin_min", 0.0),
+            "gap_max": stats.get("gap_max", 0.0),
+        }
+
+    return {
+        "statement_train": pack_statement(train),
+        "statement_hold": pack_statement(hold),
+        "statement_closed": pack_statement(closed),
+        "kind_train": pack_chain(chain_train),
+        "kind_hold": pack_chain(chain_hold),
+        "kind_closed": pack_chain(chain_closed),
+    }
+
+
+def _check_follows(lattice: Lattice) -> None:
+    """Two-sentence conversations on the offset line.
+
+    Fresh content gauges sit together at K, so every live noun would
+    match. This check writes the offset line and restores the carrier.
+    """
+    rows = all_follows()
+    train, hold = split_follows()
+    if len(rows) != len(CONTENT_WORDS) ** 2:
+        raise RuntimeError("the follow-up table left the ordered pairs")
+    if set(train) | set(hold) != set(rows) or set(train) & set(hold):
+        raise RuntimeError("the follow-up split is not a partition")
+    if len(hold) * 5 != len(rows) or not train:
+        raise RuntimeError("the follow-up split left the fifth")
+    if not any(row.same_kind() for row in train) or not any(row.same_kind() for row in hold):
+        raise RuntimeError("the follow-up split hid every repeated kind on one side")
+    if not any(not row.same_kind() for row in train) or not any(not row.same_kind() for row in hold):
+        raise RuntimeError("the follow-up split hid every kind change on one side")
+    if {row.first for row in train} != set(CONTENT_WORDS):
+        raise RuntimeError("the follow-up train split missed a subject")
+    index = {word: place for place, word in enumerate(CONTENT_WORDS)}
+    if follow_held(index["rock"], index["rock"]) or follow_held(index["water"], index["water"]):
+        raise RuntimeError("the follow-up hold took the only rock or water subject")
+    sample = FollowUp("cat", "oak")
+    if sample.opening() != "a cat is an animal" or sample.ask("animal") != "is it an animal":
+        raise RuntimeError("a cat is an animal left the follow-up")
+    if sample.closing() != "an oak is a plant" or sample.ask("plant") != "is it a plant":
+        raise RuntimeError("an oak is a plant left the follow-up")
+    saved_gauges = dict(lattice.content_value)
+    saved_working = lattice.working
+    saved_counted = lattice.counted
+    try:
+        for place, name in enumerate(CONTENT_WORDS):
+            lattice.content_value[name] = K * (place + 1)
+        moved = play_follow(lattice, "cat", "oak")
+        if moved["answers"] != ["no", "yes", "no", "no", "yes", "no", "no"]:
+            raise RuntimeError(f"cat then oak read {moved['answers']}")
+        stayed = play_follow(lattice, "cat", "dog")
+        if stayed["answers"] != ["no", "yes", "no", "yes", "yes", "no", "yes"]:
+            raise RuntimeError(f"cat then dog read {stayed['answers']}")
+        alone = play_follow(lattice, "rock", "rock")
+        if alone["answers"] != ["no", "yes", "yes", "yes", "yes", "yes", "yes"]:
+            raise RuntimeError(f"rock then rock read {alone['answers']}")
+        acc, _correct, misses, stats = score_follows(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"offset follow-up read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR or stats["carry_max"] >= GAUGE_FLOOR:
+            raise RuntimeError(
+                f"offset follow-up carry {stats['true_max_abs']} / {stats['carry_max']}"
+            )
+        if stats["false_min_abs"] <= DROP:
+            raise RuntimeError(f"offset follow-up false remainder {stats['false_min_abs']}")
+    finally:
+        lattice.content_value.update(saved_gauges)
+        lattice.working = saved_working
+        lattice.counted = saved_counted
+
+
+def _score_follows(lattice: Lattice) -> dict:
+    """Train, hold, and the closed two-sentence table."""
+    train, hold = split_follows()
+    closed = all_follows()
+
+    def pack(rows: list) -> dict:
+        acc, correct, misses, stats = score_follows(lattice, rows)
+        return {
+            "acc": acc,
+            "correct": correct,
+            "n": len(rows),
+            "misses": misses,
+            "true_max_abs": stats.get("true_max_abs", 0.0),
+            "false_min_abs": stats.get("false_min_abs", 0.0),
+            "carry_max": stats.get("carry_max", 0.0),
+        }
+
+    return {
+        "follow_train": pack(train),
+        "follow_hold": pack(hold),
+        "follow_closed": pack(closed),
+    }
+
+
+def _check_counts(lattice: Lattice) -> None:
+    """Counted sentences on an offset line for the nouns and the number words.
+
+    Fresh gauges sit together, so every count would match. This check writes
+    both lines and restores the clocks and the gauges.
+    """
+    rows = all_counts()
+    train, hold = split_counts()
+    if "zero" in COUNT_WORDS:
+        raise RuntimeError("zero sits under the drop and cannot be a counted noun")
+    if len(rows) != len(COUNT_WORDS) * len(CONTENT_WORDS):
+        raise RuntimeError("the counted table left the number and noun pairs")
+    if set(train) | set(hold) != set(rows) or set(train) & set(hold):
+        raise RuntimeError("the counted split is not a partition")
+    if len(hold) * 5 != len(rows) or not train:
+        raise RuntimeError("the counted split left the fifth")
+    if {row.count for row in train} != set(COUNT_WORDS):
+        raise RuntimeError("the counted train split missed a number word")
+    if {row.subject for row in train} != set(CONTENT_WORDS):
+        raise RuntimeError("the counted train split missed a noun")
+    own = {"rock", "water"}
+    if not any(row.subject in own for row in train) or not any(row.subject in own for row in hold):
+        raise RuntimeError("the counted split hid an own-head noun on one side")
+    if not any(row.subject not in own for row in train) or not any(row.subject not in own for row in hold):
+        raise RuntimeError("the counted split hid a headed noun on one side")
+    if not any(row.kind_changes() for row in train) or not any(row.kind_changes() for row in hold):
+        raise RuntimeError("the counted split hid every kind change on one side")
+    if not any(not row.kind_changes() for row in train) or not any(not row.kind_changes() for row in hold):
+        raise RuntimeError("the counted split hid every repeated kind on one side")
+    sample = Counted("one", "cat")
+    if sample.opening() != "one cat" or sample.ask_count("one") != "is it one":
+        raise RuntimeError("one cat left the counted sentence")
+    if sample.ask_kind("animal") != "is it an animal":
+        raise RuntimeError("is it an animal left the counted sentence")
+    if Counted("two", "cat").opening() != "two cats" or Counted("two", "fish").opening() != "two fish":
+        raise RuntimeError("the counted plural left its prior")
+    if sample.next_count() != "two" or Counted("nine", "fish").next_count() != "one":
+        raise RuntimeError("the counted ring left one through nine")
+    if Counted("five", "water").next_subject() != "cat":
+        raise RuntimeError("the counted noun ring left water")
+    saved_content = dict(lattice.content_value)
+    saved_words = dict(lattice.word_value)
+    saved_working = lattice.working
+    saved_counted = lattice.counted
+    try:
+        for place, name in enumerate(CONTENT_WORDS):
+            lattice.content_value[name] = K * (place + 1)
+        for place, name in enumerate(COUNT_WORDS):
+            lattice.word_value[name] = K * (place + 1)
+        one_cat = play_count(lattice, "one", "cat")
+        if one_cat["answers"] != [
+            "no", "no", "yes", "yes", "no", "no", "no", "yes", "yes", "no", "yes",
+        ]:
+            raise RuntimeError(f"one cat read {one_cat['answers']}")
+        one_rock = play_count(lattice, "one", "rock")
+        if one_rock["answers"] != [
+            "no", "no", "yes", "yes", "yes", "no", "no", "yes", "yes", "no", "no",
+        ]:
+            raise RuntimeError(f"one rock read {one_rock['answers']}")
+        five_water = play_count(lattice, "five", "water")
+        if five_water["answers"] != [
+            "no", "no", "yes", "yes", "yes", "no", "no", "yes", "yes", "no", "no",
+        ]:
+            raise RuntimeError(f"five water read {five_water['answers']}")
+        acc, _correct, misses, stats = score_counts(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"offset counted read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR or stats["carry_max"] >= GAUGE_FLOOR:
+            raise RuntimeError(
+                f"offset counted carry {stats['true_max_abs']} / {stats['carry_max']}"
+            )
+        if stats["false_min_abs"] <= DROP:
+            raise RuntimeError(f"offset counted false remainder {stats['false_min_abs']}")
+        if count_held(0, 0) is not True:
+            raise RuntimeError("the counted hold hash left its first cell")
+    finally:
+        lattice.content_value.update(saved_content)
+        lattice.word_value.update(saved_words)
+        lattice.working = saved_working
+        lattice.counted = saved_counted
+
+
+def _score_counts(lattice: Lattice) -> dict:
+    """Train, hold, and the closed counted table."""
+    train, hold = split_counts()
+    closed = all_counts()
+
+    def pack(rows: list) -> dict:
+        acc, correct, misses, stats = score_counts(lattice, rows)
+        return {
+            "acc": acc,
+            "correct": correct,
+            "n": len(rows),
+            "misses": misses,
+            "true_max_abs": stats.get("true_max_abs", 0.0),
+            "false_min_abs": stats.get("false_min_abs", 0.0),
+            "carry_max": stats.get("carry_max", 0.0),
+        }
+
+    return {
+        "count_train": pack(train),
+        "count_hold": pack(hold),
+        "count_closed": pack(closed),
+    }
 
 
 def _million_spell(named: int, surface: str) -> str:
@@ -4481,6 +5132,155 @@ def _score_millions(lattice: Lattice, surface: str, counts: dict[str, int]) -> d
     return {name: _finish_running(bucket) for name, bucket in buckets.items()}
 
 
+def _score_higher(lattice: Lattice, surface: str, counts_by_exp: dict[int, dict[str, int]]) -> dict[str, dict]:
+    """Checked band at each rung 10^7..10^12, plus the thin high edge.
+
+    The right operand of the band stays under 1000. The edge carries the
+    full family's top sum and the row that must stay inside the rung.
+    max_gap is gated with the mean. Old families keep their mean alone.
+    """
+    print(f"higher {surface} start", flush=True)
+    started = time.perf_counter()
+    steps = lattice.place_steps(surface)
+    gauges = lattice.gauge_line(surface)
+    plus = lattice.routed_sign("+")
+    ten = steps[1]
+    hundred = steps[2]
+    thousand = steps[3]
+    ten_thousand = steps[4]
+    hundred_thousand = steps[5]
+    million = steps[6]
+    above = (steps[7], steps[8], steps[9], steps[10], steps[11], steps[12])
+    reader = _bound_reader(
+        gauges, ten, hundred, thousand, ten_thousand, hundred_thousand, million, above
+    )
+    consensus = lattice.consensus_quantity
+    right_q = [0.0] * HIGHER_BAND
+    right_alg = [0.0] * HIGHER_BAND
+    for right in range(1, HIGHER_BAND):
+        right_q[right] = lattice.compose_integer(right, steps, gauges)
+        right_alg[right] = lattice.algebraic_integer(right, surface)
+    blocks: dict[str, dict] = {}
+    names = ("train", "hold", "closed", "ones", "place", "block", "ten", "carry", "low", "high", "edge")
+    place = RADIX * RADIX
+    for exp in HIGHER_EXPS:
+        rung = RADIX ** exp
+        prefix = rung - HIGHER_BAND
+        prefix_q = lattice.compose_integer(prefix, steps, gauges)
+        prefix_alg = lattice.algebraic_integer(prefix, surface)
+        left_q = [0.0] * HIGHER_BAND
+        left_alg = [0.0] * HIGHER_BAND
+        for rest in range(1, HIGHER_BAND):
+            left_q[rest] = consensus(prefix_q, right_q[rest], plus)
+            left_alg[rest] = prefix_alg + right_alg[rest]
+        buckets = {name: _blank_higher() for name in names}
+        note = _note_higher
+        seen = 0
+        high_cut = rung + HIGHER_BAND - place
+        for left in range(rung - HIGHER_BAND + 1, rung):
+            rest = left - prefix
+            left_q_row = left_q[rest]
+            left_alg_row = left_alg[rest]
+            left_mod = left % RADIX
+            for right in range(rung - left, HIGHER_BAND):
+                result = left + right
+                if right < RADIX:
+                    kind = 0
+                elif right < place:
+                    kind = 1
+                else:
+                    kind = 2
+                got = reader(left_q_row, right_q[right], plus) if reader is not None else None
+                if got is None:
+                    quantity = consensus(left_q_row, right_q[right], plus)
+                    named, remainder, margin, dist = lattice.read_place(
+                        quantity,
+                        surface,
+                        ten,
+                        gauges,
+                        hundred,
+                        thousand,
+                        ten_thousand,
+                        hundred_thousand,
+                        million,
+                        above,
+                    )
+                else:
+                    quantity, named, remainder, margin, dist = got
+                ok = named == result
+                gap = abs(quantity - (left_alg_row + right_alg[right]))
+                exact = result % RADIX == 0
+                miss = None
+                if not ok:
+                    want = decimal_name(result) if surface == "digit" else number_name(result)
+                    spelled = decimal_name(named) if surface == "digit" else number_name(named)
+                    miss = f"{left}+{right}={result} -> {spelled} (want {want})"
+                held = (left * 3 + right * 4 + 6 * kind) % 5 == 0
+                note(buckets["closed"], ok, gap, margin, dist, remainder, exact, miss)
+                note(buckets["hold" if held else "train"], ok, gap, margin, dist, remainder, exact, miss)
+                if kind == 0:
+                    note(buckets["ones"], ok, gap, margin, dist, remainder, exact, miss)
+                elif kind == 1:
+                    note(buckets["place"], ok, gap, margin, dist, remainder, exact, miss)
+                else:
+                    note(buckets["block"], ok, gap, margin, dist, remainder, exact, miss)
+                if exact:
+                    note(buckets["ten"], ok, gap, margin, dist, remainder, True, miss)
+                if left_mod + right % RADIX >= RADIX:
+                    note(buckets["carry"], ok, gap, margin, dist, remainder, exact, miss)
+                if result < rung + RADIX:
+                    note(buckets["low"], ok, gap, margin, dist, remainder, exact, miss)
+                if result >= high_cut:
+                    note(buckets["high"], ok, gap, margin, dist, remainder, exact, miss)
+                seen += 1
+        for left, right, result in higher_edge_rows(exp):
+            left_q_row = lattice.compose_integer(left, steps, gauges)
+            right_value = lattice.compose_integer(right, steps, gauges)
+            got = reader(left_q_row, right_value, plus) if reader is not None else None
+            if got is None:
+                quantity = consensus(left_q_row, right_value, plus)
+                named, remainder, margin, dist = lattice.read_place(
+                    quantity,
+                    surface,
+                    ten,
+                    gauges,
+                    hundred,
+                    thousand,
+                    ten_thousand,
+                    hundred_thousand,
+                    million,
+                    above,
+                )
+            else:
+                quantity, named, remainder, margin, dist = got
+            ok = named == result
+            gap = abs(
+                quantity
+                - (lattice.algebraic_integer(left, surface) + lattice.algebraic_integer(right, surface))
+            )
+            exact = result % RADIX == 0
+            miss = None
+            if not ok:
+                want = decimal_name(result) if surface == "digit" else number_name(result)
+                spelled = decimal_name(named) if surface == "digit" else number_name(named)
+                miss = f"{left}+{right}={result} -> {spelled} (want {want})"
+            note(buckets["edge"], ok, gap, margin, dist, remainder, exact, miss)
+        counts = counts_by_exp[exp]
+        if seen != counts["n"] or buckets["train"]["n"] != counts["train"] or buckets["hold"]["n"] != counts["hold"]:
+            raise RuntimeError(
+                f"higher {surface} 10^{exp} scored {seen} ({buckets['train']['n']}/{buckets['hold']['n']})"
+            )
+        for key in ("ones", "place", "block", "ten", "carry", "low", "high", "edge"):
+            if buckets[key]["n"] != counts[key]:
+                raise RuntimeError(f"higher {surface} 10^{exp} {key} scored {buckets[key]['n']}")
+        for name, bucket in buckets.items():
+            blocks[f"rung{exp}_{surface}_{name}"] = _finish_higher(bucket)
+        elapsed = time.perf_counter() - started
+        print(f"higher {surface} 10^{exp} {elapsed:.0f}s", flush=True)
+    print(f"higher {surface} done", flush=True)
+    return blocks
+
+
 def score_generated(lattice: Lattice) -> dict:
     """Score every generated family on both surfaces. Gauges stay frozen."""
     order_train, order_hold = split_claims()
@@ -4500,6 +5300,7 @@ def score_generated(lattice: Lattice) -> dict:
     ten_thou_pair_counts = census_ten_thousand_pairs()
     hund_thou_counts = census_hundred_thousand_sums()
     million_counts = census_million_sums()
+    higher_counts = census_higher_band()
     products = all_products()
     spans = all_spans()
     lexemes = all_lexemes()
@@ -4692,6 +5493,10 @@ def score_generated(lattice: Lattice) -> dict:
         "million_low_n": million_counts["low"],
         "million_high_n": million_counts["high"],
     }
+    for exp, counts in higher_counts.items():
+        report[f"rung{exp}_count"] = counts["n"]
+        report[f"rung{exp}_hold_count"] = counts["hold"]
+        report[f"rung{exp}_edge_count"] = counts["edge"]
     for surface in ("digit", "word"):
         report[f"order_{surface}_train"] = _order_block(lattice, order_train, surface)
         report[f"order_{surface}_hold"] = _order_block(lattice, order_hold, surface)
@@ -4744,6 +5549,11 @@ def score_generated(lattice: Lattice) -> dict:
             report[f"hund_thou_{surface}_{name}"] = block
         for name, block in _score_millions(lattice, surface, million_counts).items():
             report[f"million_{surface}_{name}"] = block
+        report.update(_score_higher(lattice, surface, higher_counts))
+    report.update(_score_content(lattice))
+    report.update(_score_statements(lattice))
+    report.update(_score_follows(lattice))
+    report.update(_score_counts(lattice))
     report["demos"] = _demos(lattice)
     report["ok"] = generated_ok(report)
     return report
@@ -4764,7 +5574,7 @@ def _lexeme_ok(block: dict) -> bool:
 
 
 def generated_ok(report: dict) -> bool:
-    """Exact order, product, third step, place names, place pairs, hundreds, hundred operands, thousands, thousand operands, thousand pairs, ten-thousand sums, ten-thousand operands, ten-thousand differences, hundred-thousand sums, and million sums."""
+    """Exact order through the million sums, and the checked band through a trillion."""
     for surface in ("digit", "word"):
         order_hold = report[f"order_{surface}_hold"]
         order_train = report[f"order_{surface}_train"]
@@ -4946,6 +5756,58 @@ def generated_ok(report: dict) -> bool:
         ):
             if not _lexeme_ok(report[f"million_{surface}_{split}"]):
                 return False
+        for exp in HIGHER_EXPS:
+            for split in (
+                "train",
+                "hold",
+                "closed",
+                "edge",
+                "ones",
+                "place",
+                "block",
+                "ten",
+                "carry",
+                "low",
+                "high",
+            ):
+                block = report[f"rung{exp}_{surface}_{split}"]
+                if not _lexeme_ok(block) or block["max_gap"] >= GAUGE_FLOOR:
+                    return False
+    for split in ("train", "hold", "closed"):
+        block = report[f"content_{split}"]
+        if not _exact(block):
+            return False
+        if block["true_max_abs"] >= DROP or block["false_min_abs"] <= DROP:
+            return False
+    if report["content_residual"] >= GAUGE_FLOOR:
+        return False
+    for split in ("train", "hold", "closed"):
+        block = report[f"statement_{split}"]
+        if not _exact(block):
+            return False
+        if block["true_max_abs"] >= GAUGE_FLOOR or block["false_min_abs"] <= DROP:
+            return False
+        chain = report[f"kind_{split}"]
+        if not _exact(chain):
+            return False
+        if chain["margin_min"] <= DROP or chain["gap_max"] >= GAUGE_FLOOR:
+            return False
+    for split in ("train", "hold", "closed"):
+        block = report[f"follow_{split}"]
+        if not _exact(block):
+            return False
+        if block["true_max_abs"] >= GAUGE_FLOOR or block["carry_max"] >= GAUGE_FLOOR:
+            return False
+        if block["false_min_abs"] <= DROP:
+            return False
+    for split in ("train", "hold", "closed"):
+        block = report[f"count_{split}"]
+        if not _exact(block):
+            return False
+        if block["true_max_abs"] >= GAUGE_FLOOR or block["carry_max"] >= GAUGE_FLOOR:
+            return False
+        if block["false_min_abs"] <= DROP:
+            return False
     return True
 
 
@@ -5310,6 +6172,22 @@ def _demos(lattice: Lattice) -> list[dict]:
                 "digit_want": row.digit_answer(),
                 "digit_got": lattice.predict_million(row, "digit"),
                 "word_got": lattice.predict_million(row, "word"),
+            }
+        )
+    higher = (
+        (999_999_999, 1, 1_000_000_000),
+        (999_999_999_999, 1, 1_000_000_000_000),
+    )
+    for left, right, result in higher:
+        demos.append(
+            {
+                "family": "higher",
+                "digit": f"{decimal_name(left)}+{decimal_name(right)}={decimal_name(result)}",
+                "word": f"what is {number_name(left)} plus {number_name(right)}",
+                "want": number_name(result),
+                "digit_want": decimal_name(result),
+                "digit_got": lattice.predict_power_sum(left, right, "digit"),
+                "word_got": lattice.predict_power_sum(left, right, "word"),
             }
         )
     return demos

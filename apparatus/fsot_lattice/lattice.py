@@ -30,7 +30,9 @@ difference while it stays inside 0..999. Their sum leaves the table.
 A sum that leaves 0..99999 sheds the ten-thousand step counted ten
 times, and that hundred-thousand place names the result.
 A sum that leaves 0..999999 sheds the hundred-thousand step counted
-ten times, and that million place names the result.
+ten times, and that million place names the result. Ten million through
+a trillion are that same count. Each is the previous rung counted ten
+times. The million is the last place the score walks row by row.
 Trit masks identify symbols and gate the operator. Bonds are the
 long-term pathways written at idle.
 
@@ -44,7 +46,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
-from fsot_lattice.consensus import consensus_attend, position_coherence, trit_similarity
+from fsot_lattice.consensus import position_coherence, trit_similarity
 from fsot_lattice.engine import (
     COHERENCE_GATE,
     COLLAPSE,
@@ -59,7 +61,13 @@ from fsot_lattice.engine import (
 from fsot_lattice.tasks import (
     DIGITS,
     OP_WORD,
+    CONTENT_WORDS,
+    KIND_HEADS,
+    KIND_STEPS,
+    OPPOSED_KIND,
     WORD_OF,
+    Counted,
+    content_kind,
     Chain,
     Claim,
     HundredOp,
@@ -91,7 +99,7 @@ WIDTH = 60
 DIGIT_SYMBOLS = DIGITS + ["+", "-", "="]
 WORD_SYMBOLS = [WORD_OF[i] for i in range(10)] + ["plus", "minus", "equals", "what", "is"]
 NUMERIC_WORDS = {WORD_OF[i]: str(i) for i in range(10)}
-QUANTITY_SYMBOLS = set(DIGITS) | {WORD_OF[i] for i in range(10)}
+QUANTITY_SYMBOLS = set(DIGITS) | {WORD_OF[i] for i in range(10)} | set(CONTENT_WORDS)
 
 
 def _mask(index: int) -> list[float]:
@@ -142,12 +150,19 @@ class Lattice:
     carrier_minus: list[float]
     carrier_ortho: list[float]
     bonds: list[list[float]]
+    content_value: dict[str, float]
     frozen_digits: dict[str, float] | None = None
     width: int = WIDTH
+    # The circulating clocks. Zero is empty. A named sentence writes its kind
+    # gauge on `working`. A counted sentence also writes the number-word gauge
+    # on `counted`. A question reads the clocks and leaves them.
+    working: float = 0.0
+    counted: float = 0.0
 
     @classmethod
     def fresh(cls) -> "Lattice":
-        masks = {sym: _mask(i) for i, sym in enumerate(DIGIT_SYMBOLS + WORD_SYMBOLS)}
+        symbols = DIGIT_SYMBOLS + WORD_SYMBOLS + list(CONTENT_WORDS)
+        masks = {sym: _mask(i) for i, sym in enumerate(symbols)}
         # Ordered prior K*(count+1). Plus and minus constraints pull the offset into gauge.
         digit_value = {str(d): K * (d + 1) for d in range(10)}
         # Words start flat at the rest unit. They have to move onto the frozen digits.
@@ -157,6 +172,8 @@ class Lattice:
         word_value["equals"] = K
         word_value["what"] = K
         word_value["is"] = K
+        # Content words start flat at the rest unit, then move onto the offset line.
+        content_value = {word: K for word in CONTENT_WORDS}
         bonds = [[0.0] * WIDTH for _ in range(WIDTH)]
         plus, minus, ortho = _quantity_carriers()
         return cls(
@@ -167,10 +184,15 @@ class Lattice:
             carrier_minus=minus,
             carrier_ortho=ortho,
             bonds=bonds,
+            content_value=content_value,
+            working=0.0,
+            counted=0.0,
         )
 
     def symbol_vector(self, symbol: str, surface: str) -> list[float]:
-        if surface == "digit":
+        if symbol in self.content_value:
+            value = self.content_value[symbol]
+        elif surface == "digit":
             value = self.digit_value.get(symbol, K)
         else:
             value = self.word_value.get(symbol, K)
@@ -197,18 +219,28 @@ class Lattice:
                 return got
         return self._consensus_quantity_py(left, right, sign)
 
-    def _consensus_quantity_py(self, left: float, right: float, sign: int) -> float:
-        plus_keys = [self._on_axis(left, self.carrier_plus)]
-        if sign > 0:
-            plus_keys.append(self._on_axis(right, self.carrier_plus))
-        plus_state, plus_active = consensus_attend(self.carrier_plus, plus_keys)
-        plus_q = _axis_quantity(plus_state, plus_active, self.carrier_plus)
+    def _weighted_scale(self, scale: float, axis: list[float]) -> float:
+        """Trit weight times this scale.
 
-        minus_keys: list[list[float]] = []
+        The key is the scale written on one carrier, so the projection is
+        the weight times the scale. Summing the carrier components first
+        drops the low digits once a place reaches the billions.
+        """
+        key = self._on_axis(scale, axis)
+        if position_coherence(key) <= COHERENCE_GATE:
+            return 0.0
+        weight = trit_similarity(axis, key)
+        if weight == 0.0:
+            return 0.0
+        return weight * scale
+
+    def _consensus_quantity_py(self, left: float, right: float, sign: int) -> float:
+        plus_q = self._weighted_scale(left, self.carrier_plus)
+        if sign > 0:
+            plus_q += self._weighted_scale(right, self.carrier_plus)
+        minus_q = 0.0
         if sign < 0:
-            minus_keys.append(self._on_axis(right, self.carrier_minus))
-        minus_state, minus_active = consensus_attend(self.carrier_minus, minus_keys)
-        minus_q = _axis_quantity(minus_state, minus_active, self.carrier_minus)
+            minus_q = self._weighted_scale(right, self.carrier_minus)
         return plus_q - minus_q
 
     def routed_sign(self, op_symbol: str) -> int:
@@ -323,6 +355,106 @@ class Lattice:
 
     def predict_equal(self, claim: Claim, surface: str) -> str:
         return self.remainder_answer(self.equality_remainder(claim, surface))
+
+    def content_remainder(self, left: str, right: str) -> float:
+        """Difference of two content gauges. The same word cancels."""
+        return self.consensus_quantity(
+            self.content_value[left],
+            self.content_value[right],
+            self.routed_sign("-"),
+        )
+
+    def predict_content(self, left: str, right: str) -> str:
+        return self.remainder_answer(self.content_remainder(left, right))
+
+    def kind_head_value(self, vessel: float) -> float:
+        """Lowest kind-head gauge at or above this vessel.
+
+        A head the vessel already sits on, inside the drop, wins.
+        The head list is a prior. Which head wins is the gauge line.
+        """
+        drop = COLLAPSE / AMP
+        heads = [
+            (self.content_value[name], place)
+            for place, name in enumerate(KIND_HEADS)
+        ]
+        on = [item for item in heads if abs(item[0] - vessel) <= drop]
+        if on:
+            gauge, _place = min(on, key=lambda item: (abs(item[0] - vessel), item[0], item[1]))
+            return gauge
+        above = [item for item in heads if item[0] > vessel]
+        if not above:
+            raise RuntimeError("a content gauge sat above every kind")
+        gauge, _place = min(above, key=lambda item: (item[0], item[1]))
+        return gauge
+
+    def kind_step(self, vessel: float) -> float:
+        """One kind step. The gap is the head gauge minus this vessel."""
+        gap = self.kind_head_value(vessel) - vessel
+        return self.consensus_quantity(vessel, gap, self.routed_sign("+"))
+
+    def statement_remainder(self, subject: str, stated: str) -> float:
+        """Kind step of the subject, minus the stated gauge."""
+        vessel = self.kind_step(self.content_value[subject])
+        return self.consensus_quantity(
+            vessel,
+            self.content_value[stated],
+            self.routed_sign("-"),
+        )
+
+    def predict_statement(self, subject: str, stated: str) -> str:
+        return self.remainder_answer(self.statement_remainder(subject, stated))
+
+    def kind_chain_quantity(self, subject: str) -> float:
+        """Three kind steps. Step two and step three read the running vessel."""
+        vessel = self.content_value[subject]
+        for _ in range(KIND_STEPS):
+            vessel = self.kind_step(vessel)
+        return vessel
+
+    def predict_kind_chain(self, subject: str) -> str:
+        values = [self.content_value[name] for name in CONTENT_WORDS]
+        best, _margin, _dist = _nearest_detail(self.kind_chain_quantity(subject), values)
+        return CONTENT_WORDS[best]
+
+    def clear_working(self) -> None:
+        """An empty carrier. The next question has no noun and no count."""
+        self.working = 0.0
+        self.counted = 0.0
+
+    def deposit_kind(self, subject: str) -> float:
+        """Leave this subject's kind gauge. A kind sentence names no count."""
+        self.working = self.kind_step(self.content_value[subject])
+        self.counted = 0.0
+        return self.working
+
+    def deposit_count(self, count: str, subject: str) -> tuple[float, float]:
+        """Leave the number-word gauge and this subject's kind gauge."""
+        self.counted = self.word_value[count]
+        self.working = self.kind_step(self.content_value[subject])
+        return self.counted, self.working
+
+    def it_remainder(self, stated: str) -> float:
+        """Kind clock minus the stated gauge. An empty clock drops out."""
+        return self.consensus_quantity(
+            self.working,
+            self.content_value[stated],
+            self.routed_sign("-"),
+        )
+
+    def predict_it(self, stated: str) -> str:
+        return self.remainder_answer(self.it_remainder(stated))
+
+    def it_count_remainder(self, count: str) -> float:
+        """Count clock minus the number-word gauge. An empty clock drops out."""
+        return self.consensus_quantity(
+            self.counted,
+            self.word_value[count],
+            self.routed_sign("-"),
+        )
+
+    def predict_count(self, count: str) -> str:
+        return self.remainder_answer(self.it_count_remainder(count))
 
     def order_answer(self, remainder: float) -> str:
         """Same when the remainder collapses. The sign names less or more."""
@@ -440,6 +572,29 @@ class Lattice:
         steps = [(self.routed_sign("+"), hundred_thousand) for _ in range(len(DIGITS))]
         return self.fold_steps(0.0, steps)
 
+    def place_steps(self, surface: str) -> list[float]:
+        """Index is the power of ten. Zero is unused. Twelve is a trillion.
+
+        Each rung is the ten-step counted 10^(exp-1) times. One product is
+        that count. The shed still removes one step at a time.
+        """
+        ten = self.ten_quantity(surface)
+        steps = [0.0]
+        for exp in range(1, 13):
+            steps.append(float(10 ** (exp - 1)) * ten)
+        return steps
+
+    def _rungs_above(self, million: float) -> tuple[float, float, float, float, float, float]:
+        """Ten million through a trillion, each the previous rung counted ten times."""
+        plus = self.routed_sign("+")
+        width = len(DIGITS)
+        step = million
+        rungs: list[float] = []
+        for _ in range(6):
+            step = self.fold_steps(0.0, [(plus, step) for _ in range(width)])
+            rungs.append(step)
+        return (rungs[0], rungs[1], rungs[2], rungs[3], rungs[4], rungs[5])
+
     def _shed(self, quantity: float, step: float) -> tuple[int, float]:
         """Count steps that leave a remainder above the negative drop.
 
@@ -448,6 +603,8 @@ class Lattice:
         drop = COLLAPSE / AMP
         rem = quantity
         count = 0
+        if step == 0.0:
+            return 0, quantity
         while count < len(DIGITS) - 1:
             nxt = self.consensus_quantity(rem, step, self.routed_sign("-"))
             if nxt < -drop:
@@ -491,6 +648,7 @@ class Lattice:
         ten_thousand: float | None = None,
         hundred_thousand: float | None = None,
         million: float | None = None,
+        above: tuple[float, float, float, float, float, float] | None = None,
     ) -> tuple[int, float, float, float]:
         """Integer, units remainder, runner-up margin, distance to the units gauge.
 
@@ -504,13 +662,16 @@ class Lattice:
         ten-thousand. A passed ten-thousand without a hundred-thousand uses
         that ten-thousand counted ten times. A passed hundred-thousand
         without a million uses that hundred-thousand counted ten times.
-        The million shed runs before the hundred-thousand shed.
+        A passed lower step without the six rungs above the million uses the
+        passed step counted ten times, six times. A bare read folds those rungs.
+        The trillion shed runs first.
         """
         passed_ten = ten is not None
         passed_hundred = hundred is not None
         passed_thousand = thousand is not None
         passed_ten_thousand = ten_thousand is not None
         passed_hundred_thousand = hundred_thousand is not None
+        passed_million = million is not None
         if ten is None:
             ten = self.ten_quantity(surface)
         if gauges is None:
@@ -543,17 +704,45 @@ class Lattice:
                 million = hundred_thousand * len(gauges)
             else:
                 million = self.million_quantity(surface)
+        if above is None:
+            if (
+                passed_million
+                or passed_hundred_thousand
+                or passed_ten_thousand
+                or passed_thousand
+                or passed_hundred
+                or passed_ten
+            ):
+                step = million
+                span = len(gauges)
+                built: list[float] = []
+                for _ in range(6):
+                    step = step * span
+                    built.append(step)
+                above = (built[0], built[1], built[2], built[3], built[4], built[5])
+            else:
+                above = self._rungs_above(million)
+        elif len(above) != 6:
+            raise RuntimeError("the place read wants six rungs above the million")
         from fsot_lattice import fast_attend
 
         fast_attend.ensure(self)
         if fast_attend.enabled():
             got = fast_attend.read_place(
-                quantity, gauges, ten, hundred, thousand, ten_thousand, hundred_thousand, million
+                quantity,
+                gauges,
+                ten,
+                hundred,
+                thousand,
+                ten_thousand,
+                hundred_thousand,
+                million,
+                above,
             )
             if got is not None:
                 return got
         return self._read_place_py(
-            quantity, gauges, ten, hundred, thousand, ten_thousand, hundred_thousand, million
+            quantity, gauges, ten, hundred, thousand, ten_thousand, hundred_thousand, million, above
         )
 
     def _read_place_py(
@@ -566,8 +755,16 @@ class Lattice:
         ten_thousand: float,
         hundred_thousand: float,
         million: float,
+        above: tuple[float, float, float, float, float, float],
     ) -> tuple[int, float, float, float]:
         """The same sheds as the compiled read, through the Python attend."""
+        ten_million, hundred_million, billion, ten_billion, hundred_billion, trillion = above
+        trillions, quantity = self._shed(quantity, trillion)
+        hundred_billions, quantity = self._shed(quantity, hundred_billion)
+        ten_billions, quantity = self._shed(quantity, ten_billion)
+        billions, quantity = self._shed(quantity, billion)
+        hundred_millions, quantity = self._shed(quantity, hundred_million)
+        ten_millions, quantity = self._shed(quantity, ten_million)
         millions, quantity = self.shed_million(quantity, million)
         hundred_thousands, quantity = self.shed_hundred_thousand(quantity, hundred_thousand)
         ten_thousands, quantity = self.shed_ten_thousand(quantity, ten_thousand)
@@ -576,19 +773,23 @@ class Lattice:
         tens, rem = self.shed_place(quantity, ten)
         units, margin, dist = _nearest_detail(rem, gauges)
         span = len(gauges)
-        named = (
-            (
-                (
-                    (((millions * span + hundred_thousands) * span + ten_thousands) * span + thousands)
-                    * span
-                    + hundreds
-                )
-                * span
-                + tens
-            )
-            * span
-            + units
-        )
+        named = 0
+        for count in (
+            trillions,
+            hundred_billions,
+            ten_billions,
+            billions,
+            hundred_millions,
+            ten_millions,
+            millions,
+            hundred_thousands,
+            ten_thousands,
+            thousands,
+            hundreds,
+            tens,
+            units,
+        ):
+            named = named * span + count
         return named, rem, margin, dist
 
     def lexeme_quantity(self, row: Lexeme, surface: str) -> float:
@@ -1104,6 +1305,70 @@ class Lattice:
             return decimal_name(named)
         return number_name(named)
 
+    def compose_integer(self, number: int, steps: list[float], gauges: list[float]) -> float:
+        """Each place is that step counted by its digit, then one consensus add.
+
+        The product is the same count the algebraic sum writes. Units add
+        that gauge when the digit is present.
+        """
+        if number < 0:
+            raise RuntimeError("a place name was below zero")
+        if len(steps) < 2:
+            raise RuntimeError("a place name needs the ten-step")
+        plus = self.routed_sign("+")
+        ten = steps[1]
+        acc = 0.0
+        rest = number
+        for exp in range(len(steps) - 1, 0, -1):
+            place = 10 ** exp
+            digit = rest // place
+            if digit:
+                rest -= digit * place
+                counted = (digit * 10 ** (exp - 1)) * ten
+                acc = self.consensus_quantity(acc, counted, plus)
+        if rest:
+            acc = self.consensus_quantity(acc, gauges[rest], plus)
+        return acc
+
+    def algebraic_integer(self, number: int, surface: str) -> float:
+        """Same places as compose_integer, as the ten-step times the digit."""
+        ten = self._gauge(9, surface) + self._gauge(1, surface)
+        total = 0.0
+        rest = number
+        for exp in range(12, 0, -1):
+            place = 10 ** exp
+            digit = rest // place
+            if digit:
+                rest -= digit * place
+                total += digit * (10 ** (exp - 1)) * ten
+        if rest:
+            total += self._gauge(rest, surface)
+        return total
+
+    def predict_power_sum(self, left: int, right: int, surface: str) -> str:
+        """One consensus of two place names, read through the trillion shed."""
+        steps = self.place_steps(surface)
+        gauges = self.gauge_line(surface)
+        left_q = self.compose_integer(left, steps, gauges)
+        right_q = self.compose_integer(right, steps, gauges)
+        quantity = self.consensus_quantity(left_q, right_q, self.routed_sign("+"))
+        above = (steps[7], steps[8], steps[9], steps[10], steps[11], steps[12])
+        named = self.read_place(
+            quantity,
+            surface,
+            steps[1],
+            gauges,
+            steps[2],
+            steps[3],
+            steps[4],
+            steps[5],
+            steps[6],
+            above,
+        )[0]
+        if surface == "digit":
+            return decimal_name(named)
+        return number_name(named)
+
     def _step_values(self, chain: Chain, surface: str) -> tuple[float, float, float, int, int]:
         sign1 = self.routed_sign(chain.op1)
         sign2 = self.routed_sign(chain.op2)
@@ -1191,7 +1456,7 @@ class Lattice:
     def learned_parameter_count(self) -> int:
         """Digit gauges, number-word gauges, and surviving bonds. Masks and carriers are priors."""
         bonds = sum(1 for row in self.bonds for weight in row if weight != 0.0)
-        return len(self.digit_value) + len(WORD_OF) + bonds
+        return len(self.digit_value) + len(WORD_OF) + len(self.content_value) + bonds
 
     def snapshot_digits(self) -> dict[str, float]:
         return dict(self.digit_value)
@@ -1199,17 +1464,6 @@ class Lattice:
 
 def _norm(vec: list[float]) -> float:
     return math.sqrt(sum(v * v for v in vec))
-
-
-def _axis_quantity(state: list[float], active: int, axis: list[float]) -> float:
-    """Projection of the consensus state onto one carrier, un-averaged."""
-    if active == 0:
-        return 0.0
-    denom = sum(unit * unit for unit in axis)
-    if denom == 0.0:
-        return 0.0
-    scale = sum(component * unit for component, unit in zip(state, axis)) / denom
-    return scale * active
 
 
 def _operand_values(lattice: Lattice, row: Triple, surface: str) -> tuple[float, float]:
@@ -1492,6 +1746,325 @@ def apply_word_epoch(lattice: Lattice, rows: list[Triple], hits: float) -> tuple
     for name in names:
         lattice.word_value[name] += lr * grad[name] / n
     return mse + align_mse, lr
+
+
+def content_offset(index: int) -> float:
+    """The same K*(count+1) line the digit gauges start on."""
+    return K * (index + 1)
+
+
+def content_residual(lattice: Lattice) -> float:
+    """Widest miss of a content gauge against its offset."""
+    worst = 0.0
+    for index, name in enumerate(CONTENT_WORDS):
+        worst = max(worst, abs(lattice.content_value[name] - content_offset(index)))
+    return worst
+
+
+def apply_content_epoch(lattice: Lattice, rows: list, hits: float) -> tuple[float, float]:
+    """Pull content gauges onto the offset line, then fit the train questions.
+
+    Alignment runs alone until it is tight. The pair term is the train
+    slice only. Digit gauges and number-word gauges are not in the step.
+    """
+    names = list(CONTENT_WORDS)
+    index = {name: place for place, name in enumerate(names)}
+    grad = {name: 0.0 for name in names}
+    align = 0.0
+    for name in names:
+        err = content_offset(index[name]) - lattice.content_value[name]
+        grad[name] += err
+        align += err * err
+    align_mse = align / len(names)
+    lr = fluid_lr(align_mse, hits) * GAUGE_GAIN
+    for name in names:
+        lattice.content_value[name] += lr * grad[name] / len(names)
+    if align_mse > 1e-4:
+        return align_mse, lr
+
+    loss = 0.0
+    grad = {name: 0.0 for name in names}
+    for row in rows:
+        target = K * (index[row.left] - index[row.right])
+        pred = lattice.content_value[row.left] - lattice.content_value[row.right]
+        err = target - pred
+        grad[row.left] += err
+        grad[row.right] -= err
+        loss += err * err
+    n = max(len(rows), 1)
+    mse = loss / n
+    lr = fluid_lr(max(mse, align_mse), hits) * GAUGE_GAIN
+    for name in names:
+        lattice.content_value[name] += lr * grad[name] / n
+    return mse + align_mse, lr
+
+
+def score_content(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """Yes/no from the difference of two content gauges."""
+    if not rows:
+        return 0.0, 0, [], {}
+    misses: list[str] = []
+    correct = 0
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    for row in rows:
+        got = lattice.predict_content(row.left, row.right)
+        remainder = abs(lattice.content_remainder(row.left, row.right))
+        if row.holds():
+            true_abs.append(remainder)
+        else:
+            false_abs.append(remainder)
+        if got == row.answer():
+            correct += 1
+        elif len(misses) < 8:
+            misses.append(f"{row.prompt()} -> {got} (want {row.answer()})")
+    stats = {
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "true_n": float(len(true_abs)),
+        "false_n": float(len(false_abs)),
+    }
+    return correct / len(rows), correct, misses, stats
+
+
+def score_statements(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """Yes/no from one kind step against the stated word."""
+    if not rows:
+        return 0.0, 0, [], {}
+    misses: list[str] = []
+    correct = 0
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    for row in rows:
+        got = lattice.predict_statement(row.subject, row.stated)
+        remainder = abs(lattice.statement_remainder(row.subject, row.stated))
+        if row.holds():
+            true_abs.append(remainder)
+        else:
+            false_abs.append(remainder)
+        if got == row.answer():
+            correct += 1
+        elif len(misses) < 8:
+            misses.append(f"{row.prompt()} -> {got} (want {row.answer()})")
+    stats = {
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "true_n": float(len(true_abs)),
+        "false_n": float(len(false_abs)),
+    }
+    return correct / len(rows), correct, misses, stats
+
+
+def score_kind_chains(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """The depth-3 kind fold names the head, and the vessel sits on that gauge."""
+    if not rows:
+        return 0.0, 0, [], {}
+    misses: list[str] = []
+    correct = 0
+    margins: list[float] = []
+    gaps: list[float] = []
+    values = [lattice.content_value[name] for name in CONTENT_WORDS]
+    for row in rows:
+        quantity = lattice.kind_chain_quantity(row.subject)
+        best, margin, _dist = _nearest_detail(quantity, values)
+        got = CONTENT_WORDS[best]
+        gaps.append(abs(quantity - lattice.content_value[row.answer()]))
+        margins.append(margin)
+        if got == row.answer():
+            correct += 1
+        elif len(misses) < 8:
+            misses.append(f"{row.prompt()} -> {got} (want {row.answer()})")
+    stats = {
+        "margin_min": min(margins) if margins else 0.0,
+        "gap_max": max(gaps) if gaps else 0.0,
+    }
+    return correct / len(rows), correct, misses, stats
+
+
+def play_follow(lattice: Lattice, first: str, second: str) -> dict[str, float | list[str] | bool]:
+    """Empty carrier, then two named sentences and the questions about what they left.
+
+    A question does not replace the carrier. The second sentence does.
+    The caller keeps whatever clock this writes.
+    """
+    first_kind = content_kind(first)
+    second_kind = content_kind(second)
+    same = first_kind == second_kind
+    answers: list[str] = []
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    misses: list[str] = []
+
+    def ask(stated: str, holds: bool, label: str) -> None:
+        kept = lattice.working
+        remainder = lattice.it_remainder(stated)
+        got = lattice.remainder_answer(remainder)
+        want = "yes" if holds else "no"
+        answers.append(got)
+        if holds:
+            true_abs.append(abs(remainder))
+        else:
+            false_abs.append(abs(remainder))
+        if got != want and len(misses) < 8:
+            misses.append(f"{label} -> {got} (want {want})")
+        if lattice.working != kept and len(misses) < 8:
+            misses.append(f"{label} moved the carrier")
+
+    lattice.clear_working()
+    ask(first_kind, False, f"empty is it {first_kind}")
+    lattice.deposit_kind(first)
+    carry = abs(lattice.working - lattice.content_value[first_kind])
+    ask(first_kind, True, f"is it {first_kind}")
+    ask(first, first == first_kind, f"is it {first}")
+    ask(second_kind, same, f"is it {second_kind}")
+    lattice.deposit_kind(second)
+    carry = max(carry, abs(lattice.working - lattice.content_value[second_kind]))
+    ask(second_kind, True, f"is it {second_kind}")
+    ask(second, second == second_kind, f"is it {second}")
+    ask(first_kind, same, f"again is it {first_kind}")
+    return {
+        "ok": not misses,
+        "answers": answers,
+        "misses": misses,
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": carry,
+    }
+
+
+def score_follows(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """Each row is its own conversation. The clock returns to where it started."""
+    if not rows:
+        return 0.0, 0, [], {}
+    saved = lattice.working
+    saved_count = lattice.counted
+    misses: list[str] = []
+    correct = 0
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    carry: list[float] = []
+    try:
+        for row in rows:
+            played = play_follow(lattice, row.first, row.second)
+            true_abs.append(float(played["true_max_abs"]))
+            false_abs.append(float(played["false_min_abs"]))
+            carry.append(float(played["carry_max"]))
+            if played["ok"]:
+                correct += 1
+            elif len(misses) < 8:
+                detail = played["misses"][0] if played["misses"] else "miss"
+                misses.append(f"{row.opening()} / {row.closing()} {detail}")
+    finally:
+        lattice.working = saved
+        lattice.counted = saved_count
+    stats = {
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": max(carry) if carry else 0.0,
+    }
+    return correct / len(rows), correct, misses, stats
+
+
+def play_count(lattice: Lattice, count: str, subject: str) -> dict[str, float | list[str] | bool]:
+    """Empty clocks, one counted sentence, then the next count on the next noun.
+
+    A question does not replace either clock. The next counted sentence does.
+    The caller keeps whatever clocks this writes.
+    """
+    row = Counted(count, subject)
+    kind = content_kind(subject)
+    other_count = row.next_count()
+    other_subject = row.next_subject()
+    other_kind = content_kind(other_subject)
+    opposed = OPPOSED_KIND[kind]
+    answers: list[str] = []
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    misses: list[str] = []
+
+    def ask(which: str, stated: str, holds: bool, label: str) -> None:
+        kept_kind = lattice.working
+        kept_count = lattice.counted
+        if which == "count":
+            remainder = lattice.it_count_remainder(stated)
+        else:
+            remainder = lattice.it_remainder(stated)
+        got = lattice.remainder_answer(remainder)
+        want = "yes" if holds else "no"
+        answers.append(got)
+        if holds:
+            true_abs.append(abs(remainder))
+        else:
+            false_abs.append(abs(remainder))
+        if got != want and len(misses) < 8:
+            misses.append(f"{label} -> {got} (want {want})")
+        if (lattice.working != kept_kind or lattice.counted != kept_count) and len(misses) < 8:
+            misses.append(f"{label} moved the carrier")
+
+    lattice.clear_working()
+    ask("count", count, False, f"empty is it {count}")
+    ask("kind", kind, False, f"empty is it {kind}")
+    lattice.deposit_count(count, subject)
+    carry = max(
+        abs(lattice.counted - lattice.word_value[count]),
+        abs(lattice.working - lattice.content_value[kind]),
+    )
+    ask("count", count, True, f"is it {count}")
+    ask("kind", kind, True, f"is it {kind}")
+    ask("kind", subject, subject == kind, f"is it {subject}")
+    ask("count", other_count, False, f"is it {other_count}")
+    ask("kind", opposed, False, f"is it {opposed}")
+    lattice.deposit_count(other_count, other_subject)
+    carry = max(
+        carry,
+        abs(lattice.counted - lattice.word_value[other_count]),
+        abs(lattice.working - lattice.content_value[other_kind]),
+    )
+    ask("count", other_count, True, f"is it {other_count}")
+    ask("kind", other_kind, True, f"is it {other_kind}")
+    ask("count", count, False, f"again is it {count}")
+    ask("kind", kind, kind == other_kind, f"again is it {kind}")
+    return {
+        "ok": not misses,
+        "answers": answers,
+        "misses": misses,
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": carry,
+    }
+
+
+def score_counts(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """Each row is its own sentence. Both clocks return to where they started."""
+    if not rows:
+        return 0.0, 0, [], {}
+    saved = lattice.working
+    saved_count = lattice.counted
+    misses: list[str] = []
+    correct = 0
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    carry: list[float] = []
+    try:
+        for row in rows:
+            played = play_count(lattice, row.count, row.subject)
+            true_abs.append(float(played["true_max_abs"]))
+            false_abs.append(float(played["false_min_abs"]))
+            carry.append(float(played["carry_max"]))
+            if played["ok"]:
+                correct += 1
+            elif len(misses) < 8:
+                detail = played["misses"][0] if played["misses"] else "miss"
+                misses.append(f"{row.opening()} {detail}")
+    finally:
+        lattice.working = saved
+        lattice.counted = saved_count
+    stats = {
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": max(carry) if carry else 0.0,
+    }
+    return correct / len(rows), correct, misses, stats
 
 
 def digit_drift(current: dict[str, float], frozen: dict[str, float]) -> float:

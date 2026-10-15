@@ -57,6 +57,12 @@ def _load():
         ctypes.c_double,
         ctypes.c_double,
         ctypes.c_double,
+        ctypes.c_double,
+        ctypes.c_double,
+        ctypes.c_double,
+        ctypes.c_double,
+        ctypes.c_double,
+        ctypes.c_double,
         ctypes.POINTER(ctypes.c_double),
         ctypes.POINTER(ctypes.c_double),
         ctypes.c_int,
@@ -64,7 +70,7 @@ def _load():
         ctypes.c_double,
         ctypes.c_double,
         ctypes.c_int,
-        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_longlong),
         ctypes.POINTER(ctypes.c_double),
         ctypes.POINTER(ctypes.c_double),
         ctypes.POINTER(ctypes.c_double),
@@ -92,6 +98,12 @@ def _load():
             ctypes.c_double,
             ctypes.c_double,
             ctypes.c_double,
+            ctypes.c_double,
+            ctypes.c_double,
+            ctypes.c_double,
+            ctypes.c_double,
+            ctypes.c_double,
+            ctypes.c_double,
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
             ctypes.c_int,
@@ -106,7 +118,7 @@ def _load():
             ctypes.c_double,
             ctypes.c_int,
             ctypes.POINTER(ctypes.c_double),
-            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_longlong),
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
@@ -193,15 +205,18 @@ def read_place(
     ten_thousand: float,
     hundred_thousand: float,
     million: float,
+    above: tuple[float, float, float, float, float, float],
 ) -> tuple[int, float, float, float] | None:
+    """Place read. `above` is ten million through a trillion. The name is 64-bit."""
     if not enabled() or _LIB is None or _PLUS is None or _MINUS is None:
         return None
     n = len(gauges)
     buf = (ctypes.c_double * n)(*gauges)
-    named = ctypes.c_int()
+    named = ctypes.c_longlong()
     remainder = ctypes.c_double()
     margin = ctypes.c_double()
     dist = ctypes.c_double()
+    ten_million, hundred_million, billion, ten_billion, hundred_billion, trillion = above
     _LIB.fsot_read_place(
         float(quantity),
         buf,
@@ -212,6 +227,12 @@ def read_place(
         float(ten_thousand),
         float(hundred_thousand),
         float(million),
+        float(ten_million),
+        float(hundred_million),
+        float(billion),
+        float(ten_billion),
+        float(hundred_billion),
+        float(trillion),
         _PLUS,
         _MINUS,
         _WIDTH,
@@ -259,8 +280,13 @@ def bind_read(
     ten_thousand: float,
     hundred_thousand: float | None = None,
     million: float | None = None,
+    above: tuple[float, float, float, float, float, float] | None = None,
 ) -> bool:
-    """Copy one surface into the attend. Later rows skip the gauge copy."""
+    """Copy one surface into the attend. Later rows skip the gauge copy.
+
+    A missing rung above the million is a zero step. The compiled shed skips it,
+    so a million-scale row does not pay six extra consensus calls.
+    """
     global _READ_BOUND
     _READ_BOUND = False
     if not enabled() or not _EXTRA or _LIB is None or _PLUS is None or _MINUS is None:
@@ -272,6 +298,10 @@ def bind_read(
         hundred_thousand = float(ten_thousand) * n
     if million is None:
         million = float(hundred_thousand) * n
+    if above is None:
+        ten_million = hundred_million = billion = ten_billion = hundred_billion = trillion = 0.0
+    else:
+        ten_million, hundred_million, billion, ten_billion, hundred_billion, trillion = above
     buf = (ctypes.c_double * n)(*gauges)
     ok = _LIB.fsot_bind_read(
         buf,
@@ -282,6 +312,12 @@ def bind_read(
         float(ten_thousand),
         float(hundred_thousand),
         float(million),
+        float(ten_million),
+        float(hundred_million),
+        float(billion),
+        float(ten_billion),
+        float(hundred_billion),
+        float(trillion),
         _PLUS,
         _MINUS,
         _WIDTH,
@@ -299,7 +335,7 @@ def consensus_read(left: float, right: float, sign: int):
     if not _READ_BOUND or not enabled() or not _EXTRA or _LIB is None:
         return None
     quantity = ctypes.c_double()
-    named = ctypes.c_int()
+    named = ctypes.c_longlong()
     remainder = ctypes.c_double()
     margin = ctypes.c_double()
     dist = ctypes.c_double()
