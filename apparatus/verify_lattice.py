@@ -60,7 +60,7 @@ def check_package(pin: str) -> list[str]:
         issues.append("package is not promoted")
     if not str(report.get("pin", "")).startswith(pin[:12]):
         issues.append(f"package pin {str(report.get('pin', ''))[:12]} is not {pin[:12]}")
-    if report.get("width") != 60 or report.get("learned_parameters") != 1950:
+    if report.get("width") != 60 or report.get("learned_parameters") != 1970:
         issues.append(
             f"width {report.get('width')} learned {report.get('learned_parameters')}"
         )
@@ -86,11 +86,32 @@ def check_package(pin: str) -> list[str]:
         "kind_ok",
         "follow_ok",
         "count_ok",
+        "paragraph_ok",
+        "kept_count_ok",
+        "acquired_ok",
+        "acquired_self_ok",
+        "revision_ok",
+        "acquired_count_ok",
+        "acquired_paragraph_ok",
+        "acquired_fact_ok",
     ):
         if report.get(key) is not True:
             issues.append(f"{key} is not true")
-    if float(report.get("content_residual") or 1.0) >= FLOOR:
-        issues.append(f"content residual {report.get('content_residual')}")
+    for key in (
+        "content_residual",
+        "acquired_residual",
+        "acquired_self_residual",
+        "revision_residual",
+    ):
+        value = report.get(key)
+        if value is None or float(value) >= FLOOR:
+            issues.append(f"{key} {value}")
+    if (
+        report.get("acquired_reload_drift") != 0.0
+        or report.get("acquired_self_reload_drift") != 0.0
+        or report.get("revision_idle_drift") != 0.0
+    ):
+        issues.append("a taught noun gauge moved across idle")
     applied = report.get("apply") or {}
     if applied.get("ok") is not True:
         issues.append("generated application is not ok")

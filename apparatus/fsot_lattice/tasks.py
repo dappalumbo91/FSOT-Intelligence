@@ -172,6 +172,292 @@ def content_kind(word: str) -> str:
     return CONTENT_KIND_OF[word]
 
 
+# Nouns outside the ten. Each gauge is taught the live head of its kind.
+# The order puts every head on both sides of the statement split.
+ACQUIRED_NOUNS = (
+    "wolf",
+    "clay",
+    "cow",
+    "hare",
+    "pine",
+    "moss",
+    "slate",
+    "boulder",
+    "mist",
+    "pond",
+)
+ACQUIRED_KIND = (
+    "animal",
+    "rock",
+    "animal",
+    "animal",
+    "plant",
+    "plant",
+    "rock",
+    "rock",
+    "water",
+    "water",
+)
+ACQUIRED_KIND_OF = {word: kind for word, kind in zip(ACQUIRED_NOUNS, ACQUIRED_KIND)}
+
+
+def acquired_kind(word: str) -> str:
+    return ACQUIRED_KIND_OF[word]
+
+
+# A later sentence names a different head. Each noun leaves the head it
+# was taught. Rock's true row stays on the train side of the existing fifth.
+REVISED_KIND = (
+    "plant",
+    "animal",
+    "water",
+    "water",
+    "rock",
+    "rock",
+    "plant",
+    "animal",
+    "animal",
+    "plant",
+)
+REVISED_KIND_OF = {word: kind for word, kind in zip(ACQUIRED_NOUNS, REVISED_KIND)}
+
+
+def acquired_revised_kind(word: str) -> str:
+    return REVISED_KIND_OF[word]
+
+
+@dataclass(frozen=True)
+class Acquired:
+    """A new noun against one content word. Yes when that word is the taught head."""
+
+    noun: str
+    stated: str
+
+    def prompt(self) -> str:
+        return (
+            f"{article(self.noun)} {self.noun} is "
+            f"{article(self.stated)} {self.stated}"
+        )
+
+    def holds(self) -> bool:
+        return self.stated == acquired_kind(self.noun)
+
+    def answer(self) -> str:
+        return "yes" if self.holds() else "no"
+
+
+def acquired_held(noun: int, stated: int) -> bool:
+    """Deterministic fifth. No coefficient is a multiple of 5."""
+    return (noun * 3 + stated * 4) % 5 == 0
+
+
+def all_acquired() -> list[Acquired]:
+    """Every new noun paired with every content word."""
+    return [
+        Acquired(noun, stated)
+        for noun in ACQUIRED_NOUNS
+        for stated in CONTENT_WORDS
+    ]
+
+
+def split_acquired() -> tuple[list[Acquired], list[Acquired]]:
+    nouns = {word: place for place, word in enumerate(ACQUIRED_NOUNS)}
+    stated = {word: place for place, word in enumerate(CONTENT_WORDS)}
+    rows = all_acquired()
+    train = [
+        row for row in rows
+        if not acquired_held(nouns[row.noun], stated[row.stated])
+    ]
+    hold = [
+        row for row in rows
+        if acquired_held(nouns[row.noun], stated[row.stated])
+    ]
+    return train, hold
+
+
+@dataclass(frozen=True)
+class AcquiredPair:
+    """Two new nouns. Yes when the sentences taught them the same kind."""
+
+    left: str
+    right: str
+
+    def prompt(self) -> str:
+        return f"is {self.left} {self.right}"
+
+    def holds(self) -> bool:
+        return acquired_kind(self.left) == acquired_kind(self.right)
+
+    def answer(self) -> str:
+        return "yes" if self.holds() else "no"
+
+
+def acquired_pair_held(left: int, right: int) -> bool:
+    """Deterministic fifth. No coefficient is a multiple of 5."""
+    return (left * 3 + right * 4) % 5 == 0
+
+
+def all_acquired_pairs() -> list[AcquiredPair]:
+    return [
+        AcquiredPair(left, right)
+        for left in ACQUIRED_NOUNS
+        for right in ACQUIRED_NOUNS
+    ]
+
+
+def split_acquired_pairs() -> tuple[list[AcquiredPair], list[AcquiredPair]]:
+    index = {word: place for place, word in enumerate(ACQUIRED_NOUNS)}
+    rows = all_acquired_pairs()
+    train = [
+        row for row in rows
+        if not acquired_pair_held(index[row.left], index[row.right])
+    ]
+    hold = [
+        row for row in rows
+        if acquired_pair_held(index[row.left], index[row.right])
+    ]
+    return train, hold
+
+
+@dataclass(frozen=True)
+class AcquiredSelf:
+    """Two new nouns. Yes when they are the same individual.
+
+    The kind question stays on the kind gauge. This question is the
+    individual beside that kind. "a wolf is a cow" reads no. "a wolf is
+    an animal" stays the kind read.
+    """
+
+    left: str
+    right: str
+
+    def prompt(self) -> str:
+        return (
+            f"{article(self.left)} {self.left} is "
+            f"{article(self.right)} {self.right}"
+        )
+
+    def holds(self) -> bool:
+        return self.left == self.right
+
+    def answer(self) -> str:
+        return "yes" if self.holds() else "no"
+
+
+def acquired_self_held(left: int, right: int) -> bool:
+    """Deterministic fifth. No coefficient is a multiple of 5."""
+    return (left * 3 + right * 4) % 5 == 0
+
+
+def all_acquired_selves() -> list[AcquiredSelf]:
+    return [
+        AcquiredSelf(left, right)
+        for left in ACQUIRED_NOUNS
+        for right in ACQUIRED_NOUNS
+    ]
+
+
+@dataclass(frozen=True)
+class AcquiredRevision:
+    """A taught noun against one content word after a later sentence.
+
+    Yes when that word is the new head. The individual gauge is not this read.
+    """
+
+    noun: str
+    stated: str
+    head: str
+
+    def prompt(self) -> str:
+        return (
+            f"{article(self.noun)} {self.noun} is "
+            f"{article(self.stated)} {self.stated}"
+        )
+
+    def holds(self) -> bool:
+        return self.stated == self.head
+
+    def answer(self) -> str:
+        return "yes" if self.holds() else "no"
+
+
+def all_revisions() -> list[AcquiredRevision]:
+    """Every taught noun paired with every content word, on the revised head."""
+    return [
+        AcquiredRevision(noun, stated, acquired_revised_kind(noun))
+        for noun in ACQUIRED_NOUNS
+        for stated in CONTENT_WORDS
+    ]
+
+
+def split_revisions() -> tuple[list[AcquiredRevision], list[AcquiredRevision]]:
+    nouns = {word: place for place, word in enumerate(ACQUIRED_NOUNS)}
+    stated = {word: place for place, word in enumerate(CONTENT_WORDS)}
+    rows = all_revisions()
+    train = [
+        row for row in rows
+        if not acquired_held(nouns[row.noun], stated[row.stated])
+    ]
+    hold = [
+        row for row in rows
+        if acquired_held(nouns[row.noun], stated[row.stated])
+    ]
+    return train, hold
+
+
+@dataclass(frozen=True)
+class RevisionPair:
+    """Two taught nouns after the later sentence. Yes when the new heads agree."""
+
+    left: str
+    right: str
+
+    def prompt(self) -> str:
+        return f"is {self.left} {self.right}"
+
+    def holds(self) -> bool:
+        return acquired_revised_kind(self.left) == acquired_revised_kind(self.right)
+
+    def answer(self) -> str:
+        return "yes" if self.holds() else "no"
+
+
+def all_revision_pairs() -> list[RevisionPair]:
+    return [
+        RevisionPair(left, right)
+        for left in ACQUIRED_NOUNS
+        for right in ACQUIRED_NOUNS
+    ]
+
+
+def split_revision_pairs() -> tuple[list[RevisionPair], list[RevisionPair]]:
+    index = {word: place for place, word in enumerate(ACQUIRED_NOUNS)}
+    rows = all_revision_pairs()
+    train = [
+        row for row in rows
+        if not acquired_pair_held(index[row.left], index[row.right])
+    ]
+    hold = [
+        row for row in rows
+        if acquired_pair_held(index[row.left], index[row.right])
+    ]
+    return train, hold
+
+
+def split_acquired_selves() -> tuple[list[AcquiredSelf], list[AcquiredSelf]]:
+    index = {word: place for place, word in enumerate(ACQUIRED_NOUNS)}
+    rows = all_acquired_selves()
+    train = [
+        row for row in rows
+        if not acquired_self_held(index[row.left], index[row.right])
+    ]
+    hold = [
+        row for row in rows
+        if acquired_self_held(index[row.left], index[row.right])
+    ]
+    return train, hold
+
+
 # Number words whose gauges clear the drop. Zero is about 1e-5 and would
 # read as an empty count clock, so it is not a counted noun.
 COUNT_WORDS = (
@@ -195,9 +481,10 @@ OPPOSED_KIND = {
 
 
 def plural(word: str) -> str:
-    """Prior plural. Fish stays fish. The gauge key stays the singular."""
-    if word == "fish":
-        return "fish"
+    """Prior plural. The gauge key stays the singular."""
+    irregular = {"fish": "fish", "wolf": "wolves", "moss": "mosses"}
+    if word in irregular:
+        return irregular[word]
     return word + "s"
 
 
@@ -507,6 +794,19 @@ class FollowUp:
     def same_kind(self) -> bool:
         return content_kind(self.first) == content_kind(self.second)
 
+    def text(self) -> str:
+        """Both sentences. The paragraph read keeps the first kind."""
+        return f"{self.opening()}. {self.closing()}"
+
+    def other_kind(self) -> str:
+        """A head that is neither sentence's kind."""
+        left = content_kind(self.first)
+        right = content_kind(self.second)
+        for head in KIND_HEADS:
+            if head != left and head != right:
+                return head
+        raise RuntimeError("two kinds covered every head")
+
 
 def follow_held(first: int, second: int) -> bool:
     """Deterministic fifth. No coefficient is a multiple of 5."""
@@ -586,6 +886,242 @@ def split_counts() -> tuple[list[Counted], list[Counted]]:
     hold = [
         row for row in rows
         if count_held(counts[row.count], subjects[row.subject])
+    ]
+    return train, hold
+
+
+@dataclass(frozen=True)
+class AcquiredCount:
+    """A counted sentence whose noun was taught. The clocks stay the same two scalars."""
+
+    count: str
+    noun: str
+
+    def opening(self) -> str:
+        return count_phrase(self.count, self.noun)
+
+    def kind(self) -> str:
+        return acquired_kind(self.noun)
+
+    def next_count(self) -> str:
+        place = COUNT_WORDS.index(self.count)
+        return COUNT_WORDS[(place + 1) % len(COUNT_WORDS)]
+
+    def next_noun(self) -> str:
+        place = ACQUIRED_NOUNS.index(self.noun)
+        return ACQUIRED_NOUNS[(place + 1) % len(ACQUIRED_NOUNS)]
+
+    def kind_changes(self) -> bool:
+        return self.kind() != acquired_kind(self.next_noun())
+
+
+def all_acquired_counts() -> list[AcquiredCount]:
+    """Every number word from one through nine, on every taught noun."""
+    return [
+        AcquiredCount(count, noun)
+        for count in COUNT_WORDS
+        for noun in ACQUIRED_NOUNS
+    ]
+
+
+def split_acquired_counts() -> tuple[list[AcquiredCount], list[AcquiredCount]]:
+    """The counted fifth. The noun index takes the subject slot."""
+    counts = {word: place for place, word in enumerate(COUNT_WORDS)}
+    nouns = {word: place for place, word in enumerate(ACQUIRED_NOUNS)}
+    rows = all_acquired_counts()
+    train = [
+        row for row in rows
+        if not count_held(counts[row.count], nouns[row.noun])
+    ]
+    hold = [
+        row for row in rows
+        if count_held(counts[row.count], nouns[row.noun])
+    ]
+    return train, hold
+
+
+@dataclass(frozen=True)
+class AcquiredParagraph:
+    """Two taught nouns. The second sentence keeps the kind the first left."""
+
+    first: str
+    second: str
+
+    def opening(self) -> str:
+        kind = acquired_kind(self.first)
+        return f"{article(self.first)} {self.first} is {article(kind)} {kind}"
+
+    def closing(self) -> str:
+        kind = acquired_kind(self.second)
+        return f"{article(self.second)} {self.second} is {article(kind)} {kind}"
+
+    def text(self) -> str:
+        return f"{self.opening()}. {self.closing()}"
+
+    def same_kind(self) -> bool:
+        return acquired_kind(self.first) == acquired_kind(self.second)
+
+    def other_kind(self) -> str:
+        """A head that is neither sentence's kind."""
+        left = acquired_kind(self.first)
+        right = acquired_kind(self.second)
+        for head in KIND_HEADS:
+            if head != left and head != right:
+                return head
+        raise RuntimeError("two kinds covered every head")
+
+
+def all_acquired_paragraphs() -> list[AcquiredParagraph]:
+    """Every ordered pair of taught nouns."""
+    return [
+        AcquiredParagraph(first, second)
+        for first in ACQUIRED_NOUNS
+        for second in ACQUIRED_NOUNS
+    ]
+
+
+def split_acquired_paragraphs() -> tuple[list[AcquiredParagraph], list[AcquiredParagraph]]:
+    """The paragraph fifth. The noun indexes take the two subject slots."""
+    index = {word: place for place, word in enumerate(ACQUIRED_NOUNS)}
+    rows = all_acquired_paragraphs()
+    train = [
+        row for row in rows
+        if not follow_held(index[row.first], index[row.second])
+    ]
+    hold = [
+        row for row in rows
+        if follow_held(index[row.first], index[row.second])
+    ]
+    return train, hold
+
+
+def fact_held(first: int, second: int, third: int) -> bool:
+    """Deterministic fifth of three sentences. No coefficient is a multiple of 5."""
+    return (first * 3 + second * 4 + third * 2) % 5 == 0
+
+
+@dataclass(frozen=True)
+class AcquiredFact:
+    """Three taught nouns. The first kind survives two replacements."""
+
+    first: str
+    second: str
+    third: str
+
+    def sentence(self, noun: str) -> str:
+        kind = acquired_kind(noun)
+        return f"{article(noun)} {noun} is {article(kind)} {kind}"
+
+    def text(self) -> str:
+        return f"{self.sentence(self.first)}. {self.sentence(self.second)}. {self.sentence(self.third)}"
+
+    def kinds(self) -> tuple[str, str, str]:
+        return (
+            acquired_kind(self.first),
+            acquired_kind(self.second),
+            acquired_kind(self.third),
+        )
+
+    def first_alone(self) -> bool:
+        """The first kind is on neither later sentence."""
+        first, second, third = self.kinds()
+        return first != second and first != third
+
+    def one_kind(self) -> bool:
+        first, second, third = self.kinds()
+        return first == second == third
+
+    def outside_kind(self) -> str:
+        """A head that none of the three sentences names."""
+        used = set(self.kinds())
+        for head in KIND_HEADS:
+            if head not in used:
+                return head
+        raise RuntimeError("three sentences covered every head")
+
+
+def all_acquired_facts() -> list[AcquiredFact]:
+    """Every ordered triple of taught nouns."""
+    return [
+        AcquiredFact(first, second, third)
+        for first in ACQUIRED_NOUNS
+        for second in ACQUIRED_NOUNS
+        for third in ACQUIRED_NOUNS
+    ]
+
+
+def split_acquired_facts() -> tuple[list[AcquiredFact], list[AcquiredFact]]:
+    """The fact fifth. The noun indexes take the three subject slots."""
+    index = {word: place for place, word in enumerate(ACQUIRED_NOUNS)}
+    rows = all_acquired_facts()
+    train = [
+        row for row in rows
+        if not fact_held(index[row.first], index[row.second], index[row.third])
+    ]
+    hold = [
+        row for row in rows
+        if fact_held(index[row.first], index[row.second], index[row.third])
+    ]
+    return train, hold
+
+
+@dataclass(frozen=True)
+class KeptCount:
+    """A counted sentence, then a kind sentence. The count stays on the earlier clock."""
+
+    count: str
+    subject: str
+    second: str
+
+    def opening(self) -> str:
+        return count_phrase(self.count, self.subject)
+
+    def closing(self) -> str:
+        kind = content_kind(self.second)
+        return f"{article(self.second)} {self.second} is {article(kind)} {kind}"
+
+    def text(self) -> str:
+        return f"{self.opening()}. {self.closing()}"
+
+    def other_kind(self) -> str:
+        """A head that is neither sentence's kind."""
+        left = content_kind(self.subject)
+        right = content_kind(self.second)
+        for head in KIND_HEADS:
+            if head != left and head != right:
+                return head
+        raise RuntimeError("two kinds covered every head")
+
+    def same_kind(self) -> bool:
+        return content_kind(self.subject) == content_kind(self.second)
+
+
+def kept_count_held(count: int, subject: int, second: int) -> bool:
+    """Deterministic fifth. No coefficient is a multiple of 5."""
+    return (count * 3 + subject * 4 + second * 2) % 5 == 0
+
+
+def all_kept_counts() -> list[KeptCount]:
+    """Every count, on every noun, followed by every noun's kind sentence."""
+    return [
+        KeptCount(count, subject, second)
+        for count in COUNT_WORDS
+        for subject in CONTENT_WORDS
+        for second in CONTENT_WORDS
+    ]
+
+
+def split_kept_counts() -> tuple[list[KeptCount], list[KeptCount]]:
+    counts = {word: place for place, word in enumerate(COUNT_WORDS)}
+    subjects = {word: place for place, word in enumerate(CONTENT_WORDS)}
+    rows = all_kept_counts()
+    train = [
+        row for row in rows
+        if not kept_count_held(counts[row.count], subjects[row.subject], subjects[row.second])
+    ]
+    hold = [
+        row for row in rows
+        if kept_count_held(counts[row.count], subjects[row.subject], subjects[row.second])
     ]
     return train, hold
 

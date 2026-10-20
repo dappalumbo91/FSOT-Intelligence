@@ -12,6 +12,15 @@ a kind statement is that remainder after one step to the head,
 a depth-3 kind chain keeps the vessel on that head,
 a follow-up reads the kind the previous sentence left on the carrier,
 a counted sentence reads the number-word gauge it left beside that kind,
+a two-sentence paragraph keeps the first kind beside the second,
+a counted sentence keeps its number when the next sentence names a kind,
+a new noun moves from K onto the kind its sentence names,
+that gauge reloads from idle with drift 0,
+the individual beside that kind separates wolf from cow,
+a later sentence moves the kind gauge onto another head and leaves that individual,
+a counted sentence names that noun and leaves the number beside its kind,
+two of those nouns make a paragraph and the second keeps the first kind,
+three of those nouns make a fact and the first kind survives both later sentences,
 and the generated pass scores order, product, a third step, names past nine,
 two-digit names re-entering as operands, two places in one expression,
 sums that leave 0..99, a hundred name used as an operand whose
@@ -52,10 +61,21 @@ from fsot_lattice.lattice import (
     apply_content_epoch,
     apply_digit_epoch,
     apply_word_epoch,
+    acquired_idle_drift,
+    acquired_residual,
+    acquired_self_residual,
     content_residual,
+    score_acquired,
+    score_acquired_counts,
+    score_acquired_pairs,
+    score_acquired_facts,
+    score_acquired_paragraphs,
+    score_acquired_selves,
     score_content,
     score_counts,
     score_follows,
+    score_kept_counts,
+    score_paragraphs,
     score_kind_chains,
     score_statements,
     chain_gap,
@@ -69,6 +89,9 @@ from fsot_lattice.lattice import (
     score_digits,
     score_equality,
     score_words,
+    settle_acquired,
+    settle_acquired_self,
+    settle_revision,
     write_engrams,
 )
 from fsot_lattice.tasks import (
@@ -77,20 +100,37 @@ from fsot_lattice.tasks import (
     Claim,
     Triple,
     REPEATED_LIMIT,
+    all_acquired,
+    all_acquired_counts,
+    all_acquired_pairs,
+    all_acquired_facts,
+    all_acquired_paragraphs,
+    all_acquired_selves,
+    all_revision_pairs,
+    all_revisions,
+    acquired_revised_kind,
     all_chains,
     all_claims,
     all_content,
     all_counts,
     all_follows,
+    all_kept_counts,
     all_kind_chains,
     all_statements,
     all_triples,
     epoch_order,
+    split_acquired,
+    split_acquired_counts,
+    split_acquired_pairs,
+    split_acquired_facts,
+    split_acquired_paragraphs,
+    split_acquired_selves,
     split_chains,
     split_claims,
     split_content,
     split_counts,
     split_follows,
+    split_kept_counts,
     split_kind_chains,
     split_statements,
     split_triples,
@@ -377,6 +417,190 @@ def train_content(lattice: Lattice) -> list[dict]:
     return history
 
 
+def train_acquired(lattice: Lattice) -> tuple[list[dict], float]:
+    """Move each new noun onto the live head its sentence names.
+
+    Digit gauges, number-word gauges, and the ten content gauges stay put.
+    The idle snapshot reloads the noun gauges. The clocks stay in memory.
+    """
+    digits = dict(lattice.digit_value)
+    words = dict(lattice.word_value)
+    content = dict(lattice.content_value)
+    history = settle_acquired(lattice)
+    last = history[-1]
+    if epoch_line := last:
+        print(
+            f"acquired epoch {epoch_line['epoch']:03d}  mse {epoch_line['mse']:.6e}  "
+            f"train {epoch_line['train_acc']:.3f}  hold {epoch_line['hold_acc']:.3f}  "
+            f"gauge {epoch_line['gauge_residual']:.3e}",
+            flush=True,
+        )
+    if lattice.digit_value != digits or lattice.word_value != words or lattice.content_value != content:
+        raise RuntimeError("acquired training moved a closed gauge")
+    if (
+        last["gauge_residual"] >= GAUGE_FLOOR
+        or last["train_acc"] < EXACT_FLOOR
+        or last["hold_acc"] < EXACT_FLOOR
+    ):
+        raise RuntimeError("acquired gauges missed the taught kind")
+    closed_acc, _correct, misses, stats = score_acquired(lattice, all_acquired())
+    if closed_acc < EXACT_FLOOR or misses:
+        raise RuntimeError(f"acquired table missed {misses[:3]}")
+    if stats["true_max_abs"] >= GAUGE_FLOOR or stats["false_min_abs"] <= COLLAPSE / AMP:
+        raise RuntimeError("acquired remainder crossed the drop")
+    pair_acc, _pair_n, pair_misses, pair_stats = score_acquired_pairs(lattice, all_acquired_pairs())
+    if pair_acc < EXACT_FLOOR or pair_misses:
+        raise RuntimeError(f"acquired pairs missed {pair_misses[:3]}")
+    if pair_stats["true_max_abs"] >= GAUGE_FLOOR or pair_stats["false_min_abs"] <= COLLAPSE / AMP:
+        raise RuntimeError("acquired pair remainder crossed the drop")
+    if acquired_residual(lattice) >= GAUGE_FLOOR:
+        raise RuntimeError("acquired gauges left the taught head")
+    drift = acquired_idle_drift(lattice)
+    if drift != 0.0:
+        raise RuntimeError(f"acquired idle reload drifted {drift}")
+    closed_acc, _correct, misses, stats = score_acquired(lattice, all_acquired())
+    if closed_acc < EXACT_FLOOR or misses:
+        raise RuntimeError(f"reloaded acquired table missed {misses[:3]}")
+    if stats["true_max_abs"] >= GAUGE_FLOOR or stats["false_min_abs"] <= COLLAPSE / AMP:
+        raise RuntimeError("reloaded acquired remainder crossed the drop")
+    pair_acc, _pair_n, pair_misses, pair_stats = score_acquired_pairs(lattice, all_acquired_pairs())
+    if pair_acc < EXACT_FLOOR or pair_misses:
+        raise RuntimeError(f"reloaded acquired pairs missed {pair_misses[:3]}")
+    if pair_stats["true_max_abs"] >= GAUGE_FLOOR or pair_stats["false_min_abs"] <= COLLAPSE / AMP:
+        raise RuntimeError("reloaded acquired pair remainder crossed the drop")
+    return history, drift
+
+
+def train_acquired_self(lattice: Lattice) -> tuple[list[dict], float]:
+    """Move each individual onto its own offset. The kind gauges stay put."""
+    digits = dict(lattice.digit_value)
+    words = dict(lattice.word_value)
+    content = dict(lattice.content_value)
+    kinds = dict(lattice.acquired_value)
+    history = settle_acquired_self(lattice)
+    last = history[-1]
+    if epoch_line := last:
+        print(
+            f"individual epoch {epoch_line['epoch']:03d}  mse {epoch_line['mse']:.6e}  "
+            f"train {epoch_line['train_acc']:.3f}  hold {epoch_line['hold_acc']:.3f}  "
+            f"gauge {epoch_line['gauge_residual']:.3e}",
+            flush=True,
+        )
+    if (
+        lattice.digit_value != digits
+        or lattice.word_value != words
+        or lattice.content_value != content
+        or lattice.acquired_value != kinds
+    ):
+        raise RuntimeError("individual training moved a closed gauge")
+    if (
+        last["gauge_residual"] >= GAUGE_FLOOR
+        or last["train_acc"] < EXACT_FLOOR
+        or last["hold_acc"] < EXACT_FLOOR
+    ):
+        raise RuntimeError("individual gauges missed the offset")
+    closed_acc, _correct, misses, stats = score_acquired_selves(lattice, all_acquired_selves())
+    if closed_acc < EXACT_FLOOR or misses:
+        raise RuntimeError(f"individual table missed {misses[:3]}")
+    if stats["true_max_abs"] >= GAUGE_FLOOR or stats["false_min_abs"] <= COLLAPSE / AMP:
+        raise RuntimeError("individual remainder crossed the drop")
+    if acquired_self_residual(lattice) >= GAUGE_FLOOR:
+        raise RuntimeError("individual gauges left the offset line")
+    kind_acc, _kind_n, kind_misses, kind_stats = score_acquired(lattice, all_acquired())
+    if kind_acc < EXACT_FLOOR or kind_misses:
+        raise RuntimeError(f"individual training moved the kind table {kind_misses[:3]}")
+    if kind_stats["true_max_abs"] >= GAUGE_FLOOR or kind_stats["false_min_abs"] <= COLLAPSE / AMP:
+        raise RuntimeError("individual training moved a kind remainder")
+    drift = acquired_idle_drift(lattice)
+    if drift != 0.0:
+        raise RuntimeError(f"individual idle reload drifted {drift}")
+    closed_acc, _correct, misses, stats = score_acquired_selves(lattice, all_acquired_selves())
+    if closed_acc < EXACT_FLOOR or misses:
+        raise RuntimeError(f"reloaded individual table missed {misses[:3]}")
+    if stats["true_max_abs"] >= GAUGE_FLOOR or stats["false_min_abs"] <= COLLAPSE / AMP:
+        raise RuntimeError("reloaded individual remainder crossed the drop")
+    return history, drift
+
+
+def train_revision(lattice: Lattice) -> dict:
+    """Move each kind gauge onto the head a later sentence names.
+
+    The individual gauges stay put. The first teaching is restored so the
+    resting table remains the head the noun was given.
+    """
+    digits = dict(lattice.digit_value)
+    words = dict(lattice.word_value)
+    content = dict(lattice.content_value)
+    taught = dict(lattice.acquired_value)
+    individuals = dict(lattice.acquired_self)
+    try:
+        wolf = settle_revision(lattice, {"wolf": "plant"})
+        wolf_last = wolf[-1]
+        if wolf_last["gauge_residual"] >= GAUGE_FLOOR or wolf_last["train_acc"] < EXACT_FLOOR:
+            raise RuntimeError("wolf missed the later head")
+        if lattice.predict_acquired("wolf", "plant") != "yes" or lattice.predict_acquired("wolf", "animal") != "no":
+            raise RuntimeError("wolf did not change its mind")
+        if lattice.predict_acquired("cow", "animal") != "yes" or lattice.predict_acquired_pair("wolf", "cow") != "no":
+            raise RuntimeError("cow moved with wolf")
+        if lattice.predict_acquired_self("wolf", "wolf") != "yes":
+            raise RuntimeError("wolf left its individual")
+        if lattice.acquired_self != individuals:
+            raise RuntimeError("the later sentence moved an individual")
+        for name, gauge in taught.items():
+            if name != "wolf" and lattice.acquired_value[name] != gauge:
+                raise RuntimeError(f"the later sentence moved {name}")
+        lattice.acquired_value.update(taught)
+        revised = settle_revision(
+            lattice,
+            {name: acquired_revised_kind(name) for name in lattice.acquired_value},
+        )
+        last = revised[-1]
+        if (
+            last["gauge_residual"] >= GAUGE_FLOOR
+            or last["train_acc"] < EXACT_FLOOR
+            or last["hold_acc"] < EXACT_FLOOR
+        ):
+            raise RuntimeError("revision missed the new heads")
+        closed_acc, _correct, misses, stats = score_acquired(lattice, all_revisions())
+        if closed_acc < EXACT_FLOOR or misses:
+            raise RuntimeError(f"revision table missed {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR or stats["false_min_abs"] <= COLLAPSE / AMP:
+            raise RuntimeError("revision remainder crossed the drop")
+        pair_acc, _pair_n, pair_misses, pair_stats = score_acquired_pairs(lattice, all_revision_pairs())
+        if pair_acc < EXACT_FLOOR or pair_misses:
+            raise RuntimeError(f"revision pairs missed {pair_misses[:3]}")
+        if pair_stats["true_max_abs"] >= GAUGE_FLOOR or pair_stats["false_min_abs"] <= COLLAPSE / AMP:
+            raise RuntimeError("revision pair remainder crossed the drop")
+        if lattice.acquired_self != individuals:
+            raise RuntimeError("revision moved an individual gauge")
+        if lattice.digit_value != digits or lattice.word_value != words or lattice.content_value != content:
+            raise RuntimeError("revision moved a closed gauge")
+        drift = acquired_idle_drift(lattice)
+        if drift != 0.0:
+            raise RuntimeError(f"revision idle reload drifted {drift}")
+        if epoch_line := last:
+            print(
+                f"revision epoch {epoch_line['epoch']:03d}  mse {epoch_line['mse']:.6e}  "
+                f"train {epoch_line['train_acc']:.3f}  hold {epoch_line['hold_acc']:.3f}  "
+                f"gauge {epoch_line['gauge_residual']:.3e}",
+                flush=True,
+            )
+        return {
+            "wolf_epochs": len(wolf),
+            "epochs": len(revised),
+            "train_acc": last["train_acc"],
+            "hold_acc": last["hold_acc"],
+            "true_max": stats["true_max_abs"],
+            "false_min": stats["false_min_abs"],
+            "pair_true_max": pair_stats["true_max_abs"],
+            "pair_false_min": pair_stats["false_min_abs"],
+            "residual": last["gauge_residual"],
+            "idle_drift": drift,
+        }
+    finally:
+        lattice.acquired_value.update(taught)
+
+
 def run() -> dict:
     started = time.perf_counter()
     pin = require_live_pin()
@@ -417,6 +641,9 @@ def run() -> dict:
     word_history = _run_phase(lattice, train, hold, WORD_EPOCHS, "word")
     lattice.digit_value = dict(lattice.frozen_digits or {})
     content_history = train_content(lattice)
+    acquired_history, acquired_reload_drift = train_acquired(lattice)
+    self_history, self_reload_drift = train_acquired_self(lattice)
+    revision = train_revision(lattice)
     lattice.digit_value = dict(lattice.frozen_digits or {})
 
     digit_train_after, _, _ = score_digits(lattice, train)
@@ -542,6 +769,102 @@ def run() -> dict:
         and count_all[3]["carry_max"] < GAUGE_FLOOR
         and count_all[3]["false_min_abs"] > eq_drop
     )
+    acq_count_train, acq_count_hold = split_acquired_counts()
+    acq_count_train_score = score_acquired_counts(lattice, acq_count_train)
+    acq_count_hold_score = score_acquired_counts(lattice, acq_count_hold)
+    acq_count_all = score_acquired_counts(lattice, all_acquired_counts())
+    acquired_count_ok = (
+        acq_count_train_score[0] >= EXACT_FLOOR
+        and acq_count_hold_score[0] >= EXACT_FLOOR
+        and acq_count_all[3]["true_max_abs"] < GAUGE_FLOOR
+        and acq_count_all[3]["carry_max"] < GAUGE_FLOOR
+        and acq_count_all[3]["false_min_abs"] > eq_drop
+    )
+    acq_para_train, acq_para_hold = split_acquired_paragraphs()
+    acq_para_train_score = score_acquired_paragraphs(lattice, acq_para_train)
+    acq_para_hold_score = score_acquired_paragraphs(lattice, acq_para_hold)
+    acq_para_all = score_acquired_paragraphs(lattice, all_acquired_paragraphs())
+    acquired_paragraph_ok = (
+        acq_para_train_score[0] >= EXACT_FLOOR
+        and acq_para_hold_score[0] >= EXACT_FLOOR
+        and acq_para_all[3]["true_max_abs"] < GAUGE_FLOOR
+        and acq_para_all[3]["carry_max"] < GAUGE_FLOOR
+        and acq_para_all[3]["false_min_abs"] > eq_drop
+    )
+    acq_fact_train, acq_fact_hold = split_acquired_facts()
+    acq_fact_train_score = score_acquired_facts(lattice, acq_fact_train)
+    acq_fact_hold_score = score_acquired_facts(lattice, acq_fact_hold)
+    acq_fact_all = score_acquired_facts(lattice, all_acquired_facts())
+    acquired_fact_ok = (
+        acq_fact_train_score[0] >= EXACT_FLOOR
+        and acq_fact_hold_score[0] >= EXACT_FLOOR
+        and acq_fact_all[3]["true_max_abs"] < GAUGE_FLOOR
+        and acq_fact_all[3]["carry_max"] < GAUGE_FLOOR
+        and acq_fact_all[3]["false_min_abs"] > eq_drop
+    )
+    para_train_score = score_paragraphs(lattice, follow_train)
+    para_hold_score = score_paragraphs(lattice, follow_hold)
+    para_all = score_paragraphs(lattice, all_follows())
+    paragraph_ok = (
+        para_train_score[0] >= EXACT_FLOOR
+        and para_hold_score[0] >= EXACT_FLOOR
+        and para_all[3]["true_max_abs"] < GAUGE_FLOOR
+        and para_all[3]["carry_max"] < GAUGE_FLOOR
+        and para_all[3]["false_min_abs"] > eq_drop
+    )
+    kept_train, kept_hold = split_kept_counts()
+    kept_train_score = score_kept_counts(lattice, kept_train)
+    kept_hold_score = score_kept_counts(lattice, kept_hold)
+    kept_all = score_kept_counts(lattice, all_kept_counts())
+    kept_count_ok = (
+        kept_train_score[0] >= EXACT_FLOOR
+        and kept_hold_score[0] >= EXACT_FLOOR
+        and kept_all[3]["true_max_abs"] < GAUGE_FLOOR
+        and kept_all[3]["carry_max"] < GAUGE_FLOOR
+        and kept_all[3]["false_min_abs"] > eq_drop
+    )
+    acq_train, acq_hold = split_acquired()
+    acq_train_score = score_acquired(lattice, acq_train)
+    acq_hold_score = score_acquired(lattice, acq_hold)
+    acq_all = score_acquired(lattice, all_acquired())
+    pair_train, pair_hold = split_acquired_pairs()
+    pair_train_score = score_acquired_pairs(lattice, pair_train)
+    pair_hold_score = score_acquired_pairs(lattice, pair_hold)
+    pair_all = score_acquired_pairs(lattice, all_acquired_pairs())
+    acquired_ok = (
+        acq_train_score[0] >= EXACT_FLOOR
+        and acq_hold_score[0] >= EXACT_FLOOR
+        and acq_all[3]["true_max_abs"] < GAUGE_FLOOR
+        and acq_all[3]["false_min_abs"] > eq_drop
+        and pair_train_score[0] >= EXACT_FLOOR
+        and pair_hold_score[0] >= EXACT_FLOOR
+        and pair_all[3]["true_max_abs"] < GAUGE_FLOOR
+        and pair_all[3]["false_min_abs"] > eq_drop
+        and acquired_residual(lattice) < GAUGE_FLOOR
+        and acquired_reload_drift == 0.0
+    )
+    self_train, self_hold = split_acquired_selves()
+    self_train_score = score_acquired_selves(lattice, self_train)
+    self_hold_score = score_acquired_selves(lattice, self_hold)
+    self_all = score_acquired_selves(lattice, all_acquired_selves())
+    acquired_self_ok = (
+        self_train_score[0] >= EXACT_FLOOR
+        and self_hold_score[0] >= EXACT_FLOOR
+        and self_all[3]["true_max_abs"] < GAUGE_FLOOR
+        and self_all[3]["false_min_abs"] > eq_drop
+        and acquired_self_residual(lattice) < GAUGE_FLOOR
+        and self_reload_drift == 0.0
+    )
+    revision_ok = (
+        revision["train_acc"] >= EXACT_FLOOR
+        and revision["hold_acc"] >= EXACT_FLOOR
+        and revision["true_max"] < GAUGE_FLOOR
+        and revision["false_min"] > eq_drop
+        and revision["pair_true_max"] < GAUGE_FLOOR
+        and revision["pair_false_min"] > eq_drop
+        and revision["residual"] < GAUGE_FLOOR
+        and revision["idle_drift"] == 0.0
+    )
     promoted = (
         retention_ok
         and word_ok
@@ -554,6 +877,14 @@ def run() -> dict:
         and kind_ok
         and follow_ok
         and count_ok
+        and acquired_count_ok
+        and acquired_paragraph_ok
+        and acquired_fact_ok
+        and paragraph_ok
+        and kept_count_ok
+        and acquired_ok
+        and acquired_self_ok
+        and revision_ok
         and applied["ok"]
     )
 
@@ -586,6 +917,7 @@ def run() -> dict:
         "digit_epochs": len(digit_history),
         "word_epochs": len(word_history),
         "content_epochs": len(content_history),
+        "acquired_epochs": len(acquired_history),
         "content_train": content_train_score[0],
         "content_hold": content_hold_score[0],
         "content_residual": content_residual(lattice),
@@ -615,6 +947,70 @@ def run() -> dict:
         "count_false_min": count_all[3]["false_min_abs"],
         "count_carry_max": count_all[3]["carry_max"],
         "count_ok": count_ok,
+        "acquired_count_train": acq_count_train_score[0],
+        "acquired_count_hold": acq_count_hold_score[0],
+        "acquired_count_true_max": acq_count_all[3]["true_max_abs"],
+        "acquired_count_false_min": acq_count_all[3]["false_min_abs"],
+        "acquired_count_carry_max": acq_count_all[3]["carry_max"],
+        "acquired_count_ok": acquired_count_ok,
+        "acquired_paragraph_train": acq_para_train_score[0],
+        "acquired_paragraph_hold": acq_para_hold_score[0],
+        "acquired_paragraph_true_max": acq_para_all[3]["true_max_abs"],
+        "acquired_paragraph_false_min": acq_para_all[3]["false_min_abs"],
+        "acquired_paragraph_carry_max": acq_para_all[3]["carry_max"],
+        "acquired_paragraph_ok": acquired_paragraph_ok,
+        "acquired_fact_train": acq_fact_train_score[0],
+        "acquired_fact_hold": acq_fact_hold_score[0],
+        "acquired_fact_true_max": acq_fact_all[3]["true_max_abs"],
+        "acquired_fact_false_min": acq_fact_all[3]["false_min_abs"],
+        "acquired_fact_carry_max": acq_fact_all[3]["carry_max"],
+        "acquired_fact_ok": acquired_fact_ok,
+        "paragraph_train": para_train_score[0],
+        "paragraph_hold": para_hold_score[0],
+        "paragraph_true_max": para_all[3]["true_max_abs"],
+        "paragraph_false_min": para_all[3]["false_min_abs"],
+        "paragraph_carry_max": para_all[3]["carry_max"],
+        "paragraph_ok": paragraph_ok,
+        "kept_count_train": kept_train_score[0],
+        "kept_count_hold": kept_hold_score[0],
+        "kept_count_true_max": kept_all[3]["true_max_abs"],
+        "kept_count_false_min": kept_all[3]["false_min_abs"],
+        "kept_count_carry_max": kept_all[3]["carry_max"],
+        "kept_count_ok": kept_count_ok,
+        "acquired_train": acq_train_score[0],
+        "acquired_hold": acq_hold_score[0],
+        "acquired_true_max": acq_all[3]["true_max_abs"],
+        "acquired_false_min": acq_all[3]["false_min_abs"],
+        "acquired_pair_true_max": pair_all[3]["true_max_abs"],
+        "acquired_pair_false_min": pair_all[3]["false_min_abs"],
+        "acquired_residual": acquired_residual(lattice),
+        "acquired_reload_drift": acquired_reload_drift,
+        "acquired_values": {
+            word: lattice.acquired_value[word] for word in lattice.acquired_value
+        },
+        "acquired_ok": acquired_ok,
+        "acquired_self_epochs": len(self_history),
+        "acquired_self_train": self_train_score[0],
+        "acquired_self_hold": self_hold_score[0],
+        "acquired_self_true_max": self_all[3]["true_max_abs"],
+        "acquired_self_false_min": self_all[3]["false_min_abs"],
+        "acquired_self_residual": acquired_self_residual(lattice),
+        "acquired_self_reload_drift": self_reload_drift,
+        "acquired_self_values": {
+            word: lattice.acquired_self[word] for word in lattice.acquired_self
+        },
+        "acquired_self_ok": acquired_self_ok,
+        "revision_wolf_epochs": revision["wolf_epochs"],
+        "revision_epochs": revision["epochs"],
+        "revision_train": revision["train_acc"],
+        "revision_hold": revision["hold_acc"],
+        "revision_true_max": revision["true_max"],
+        "revision_false_min": revision["false_min"],
+        "revision_pair_true_max": revision["pair_true_max"],
+        "revision_pair_false_min": revision["pair_false_min"],
+        "revision_residual": revision["residual"],
+        "revision_idle_drift": revision["idle_drift"],
+        "revision_ok": revision_ok,
         "digit_train_before": digit_train_before,
         "digit_hold_before": digit_hold_before,
         "digit_train_after": digit_train_after,
@@ -697,6 +1093,8 @@ def run() -> dict:
         "digit_history_tail": digit_history[-3:],
         "word_history_tail": word_history[-3:],
         "content_history_tail": content_history[-3:],
+        "acquired_history_tail": acquired_history[-3:],
+        "acquired_self_history_tail": self_history[-3:],
     }
     write_engrams(ENGRAMS, lattice, pin, {"phase": "final", "promoted": promoted})
     RESULTS.parent.mkdir(parents=True, exist_ok=True)
@@ -732,6 +1130,15 @@ def run() -> dict:
         f"kind {kind_hold_score[0]:.3f}/{kind_all[3]['gap_max']:.3e}  "
         f"follow {follow_hold_score[0]:.3f}/{follow_all[3]['carry_max']:.3e}  "
         f"count {count_hold_score[0]:.3f}/{count_all[3]['carry_max']:.3e}  "
+        f"acqcount {acq_count_hold_score[0]:.3f}/{acq_count_all[3]['carry_max']:.3e}  "
+        f"acqpara {acq_para_hold_score[0]:.3f}/{acq_para_all[3]['carry_max']:.3e}  "
+        f"acqfact {acq_fact_hold_score[0]:.3f}/{acq_fact_all[3]['carry_max']:.3e}  "
+        f"paragraph {para_hold_score[0]:.3f}/{para_all[3]['carry_max']:.3e}  "
+        f"kept {kept_hold_score[0]:.3f}/{kept_all[3]['carry_max']:.3e}  "
+        f"acq {acq_hold_score[0]:.3f}/{acquired_residual(lattice):.3e}  "
+        f"idle {acquired_reload_drift:.3e}  "
+        f"self {self_hold_score[0]:.3f}/{acquired_self_residual(lattice):.3e}  "
+        f"rev {revision['hold_acc']:.3f}/{revision['residual']:.3e}  "
         f"bonds {int(bond_meta['kept_bonds'])}  confidence {confidence:.3f}  "
         f"wall {time.perf_counter() - started:.2f}s",
         flush=True,

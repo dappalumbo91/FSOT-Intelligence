@@ -16,6 +16,11 @@ A composed statement is that read after one kind step. A depth-3 chain
 takes the step three times. The kind table adds no gauges.
 A follow-up reads the working carrier left by the sentence before it.
 A counted sentence leaves a number-word gauge beside that kind.
+A taught noun uses that same counted sentence. The number stays the
+number word, and the kind is the head that noun steps to.
+Two taught nouns make a paragraph. The second sentence keeps the
+kind the first one left. Three taught nouns make a fact. The first
+kind survives both later sentences.
 """
 
 from __future__ import annotations
@@ -29,9 +34,29 @@ from fsot_lattice.lattice import (
     content_residual,
     play_count,
     play_follow,
+    acquired_idle_drift,
+    acquired_residual,
+    acquired_self_residual,
+    play_acquired,
+    play_acquired_count,
+    play_acquired_fact,
+    play_acquired_paragraph,
+    play_kept_count,
+    play_paragraph,
+    score_acquired,
+    score_acquired_counts,
+    score_acquired_pairs,
+    score_acquired_facts,
+    score_acquired_paragraphs,
+    score_acquired_selves,
     score_content,
     score_counts,
     score_follows,
+    score_kept_counts,
+    score_paragraphs,
+    settle_acquired,
+    settle_acquired_self,
+    settle_revision,
     score_kind_chains,
     score_statements,
 )
@@ -41,6 +66,12 @@ from fsot_lattice.tasks import (
     ANSWER_PRIORS,
     BILLION,
     CONTENT_KIND,
+    ACQUIRED_NOUNS,
+    AcquiredCount,
+    AcquiredFact,
+    AcquiredParagraph,
+    AcquiredSelf,
+    AcquiredRevision,
     CONTENT_WORDS,
     COUNT_WORDS,
     DIGITS,
@@ -58,9 +89,20 @@ from fsot_lattice.tasks import (
     THOUSAND_CAP,
     THOUSAND_SPAN,
     WORD_OF,
+    acquired_kind,
+    acquired_revised_kind,
+    all_acquired,
+    all_acquired_counts,
+    all_acquired_pairs,
+    all_acquired_facts,
+    all_acquired_paragraphs,
+    all_acquired_selves,
+    all_revision_pairs,
+    all_revisions,
     all_content,
     all_counts,
     all_follows,
+    all_kept_counts,
     all_kind_chains,
     all_statements,
     article,
@@ -68,16 +110,28 @@ from fsot_lattice.tasks import (
     content_kind,
     count_held,
     follow_held,
+    kept_count_held,
     kind_held,
+    split_acquired,
+    split_acquired_counts,
+    split_acquired_pairs,
+    split_acquired_facts,
+    split_acquired_paragraphs,
+    split_acquired_selves,
+    split_revision_pairs,
+    split_revisions,
     split_content,
     split_counts,
     split_follows,
+    split_kept_counts,
     split_kind_chains,
     split_statements,
     statement_held,
+    Acquired,
     Claim,
     Counted,
     FollowUp,
+    KeptCount,
     KindChain,
     HundredOp,
     HundredSum,
@@ -203,6 +257,14 @@ def check_generated(lattice: Lattice) -> None:
     _check_statements(lattice)
     _check_follows(lattice)
     _check_counts(lattice)
+    _check_paragraphs(lattice)
+    _check_kept_counts(lattice)
+    _check_acquired(lattice)
+    _check_acquired_self(lattice)
+    _check_revision(lattice)
+    _check_acquired_counts(lattice)
+    _check_acquired_paragraphs(lattice)
+    _check_acquired_facts(lattice)
 
 
 def _check_lexicon(lattice: Lattice) -> None:
@@ -4784,6 +4846,10 @@ def _check_follows(lattice: Lattice) -> None:
     saved_gauges = dict(lattice.content_value)
     saved_working = lattice.working
     saved_counted = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
     try:
         for place, name in enumerate(CONTENT_WORDS):
             lattice.content_value[name] = K * (place + 1)
@@ -4809,6 +4875,10 @@ def _check_follows(lattice: Lattice) -> None:
         lattice.content_value.update(saved_gauges)
         lattice.working = saved_working
         lattice.counted = saved_counted
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
 
 
 def _score_follows(lattice: Lattice) -> dict:
@@ -4879,6 +4949,10 @@ def _check_counts(lattice: Lattice) -> None:
     saved_words = dict(lattice.word_value)
     saved_working = lattice.working
     saved_counted = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
     try:
         for place, name in enumerate(CONTENT_WORDS):
             lattice.content_value[name] = K * (place + 1)
@@ -4915,6 +4989,928 @@ def _check_counts(lattice: Lattice) -> None:
         lattice.word_value.update(saved_words)
         lattice.working = saved_working
         lattice.counted = saved_counted
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+
+
+def _check_paragraphs(lattice: Lattice) -> None:
+    """A paragraph keeps the first kind. Fresh gauges tie, so this writes the offset line."""
+    rows = all_follows()
+    train, hold = split_follows()
+    if len(rows) != len(CONTENT_WORDS) ** 2:
+        raise RuntimeError("the paragraph table left the ordered pairs")
+    sample = FollowUp("cat", "oak")
+    if sample.text() != "a cat is an animal. an oak is a plant":
+        raise RuntimeError("the cat and oak paragraph left its two sentences")
+    if sample.other_kind() != "rock":
+        raise RuntimeError("cat and oak left rock as the outside head")
+    saved_gauges = dict(lattice.content_value)
+    saved_working = lattice.working
+    saved_counted = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    try:
+        for place, name in enumerate(CONTENT_WORDS):
+            lattice.content_value[name] = K * (place + 1)
+        cat_oak = play_paragraph(lattice, "cat", "oak")
+        if cat_oak["answers"] != ["no", "yes", "no", "yes", "yes", "no"]:
+            raise RuntimeError(f"cat oak paragraph read {cat_oak['answers']}")
+        cat_dog = play_paragraph(lattice, "cat", "dog")
+        if cat_dog["answers"] != ["no", "yes", "yes", "yes", "yes", "no"]:
+            raise RuntimeError(f"cat dog paragraph read {cat_dog['answers']}")
+        rock_water = play_paragraph(lattice, "rock", "water")
+        if rock_water["answers"] != ["no", "yes", "no", "yes", "yes", "no"]:
+            raise RuntimeError(f"rock water paragraph read {rock_water['answers']}")
+        kept = play_follow(lattice, "cat", "oak")
+        if kept["answers"] != ["no", "yes", "no", "no", "yes", "no", "no"]:
+            raise RuntimeError(f"is it still reads only the latest clock {kept['answers']}")
+        acc, _correct, misses, stats = score_paragraphs(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"offset paragraph read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR or stats["carry_max"] >= GAUGE_FLOOR:
+            raise RuntimeError(
+                f"offset paragraph carry {stats['true_max_abs']} / {stats['carry_max']}"
+            )
+        if stats["false_min_abs"] <= DROP:
+            raise RuntimeError(f"offset paragraph false remainder {stats['false_min_abs']}")
+        if len(hold) * 5 != len(rows) or not train:
+            raise RuntimeError("the paragraph split left the fifth")
+    finally:
+        lattice.content_value.update(saved_gauges)
+        lattice.working = saved_working
+        lattice.counted = saved_counted
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+
+
+def _check_kept_counts(lattice: Lattice) -> None:
+    """A counted sentence keeps its number when the next sentence names a kind.
+
+    Fresh gauges tie, so this writes the offset line for nouns and number words.
+    The latest count read stays on the latest clock.
+    """
+    rows = all_kept_counts()
+    train, hold = split_kept_counts()
+    if len(rows) != len(COUNT_WORDS) * len(CONTENT_WORDS) ** 2:
+        raise RuntimeError("the kept-count table left the count and noun pairs")
+    if set(train) | set(hold) != set(rows) or set(train) & set(hold):
+        raise RuntimeError("the kept-count split is not a partition")
+    if len(hold) * 5 != len(rows) or not train:
+        raise RuntimeError("the kept-count split left the fifth")
+    if {row.count for row in train} != set(COUNT_WORDS):
+        raise RuntimeError("the kept-count train split missed a number word")
+    if {row.subject for row in train} != set(CONTENT_WORDS):
+        raise RuntimeError("the kept-count train split missed a noun")
+    own = {"rock", "water"}
+    if not any(row.subject in own for row in train) or not any(row.subject in own for row in hold):
+        raise RuntimeError("the kept-count split hid an own-head noun on one side")
+    if not any(row.same_kind() for row in train) or not any(row.same_kind() for row in hold):
+        raise RuntimeError("the kept-count split hid every repeated kind on one side")
+    if not any(not row.same_kind() for row in train) or not any(not row.same_kind() for row in hold):
+        raise RuntimeError("the kept-count split hid every kind change on one side")
+    sample = KeptCount("two", "cat", "oak")
+    if sample.text() != "two cats. an oak is a plant":
+        raise RuntimeError("two cats then an oak left the kept-count paragraph")
+    if sample.other_kind() != "rock":
+        raise RuntimeError("two cats then an oak left rock as the outside head")
+    if not kept_count_held(0, 0, 0):
+        raise RuntimeError("the kept-count hold hash left its first cell")
+    saved_content = dict(lattice.content_value)
+    saved_words = dict(lattice.word_value)
+    saved_working = lattice.working
+    saved_counted = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    try:
+        for place, name in enumerate(CONTENT_WORDS):
+            lattice.content_value[name] = K * (place + 1)
+        for place, name in enumerate(COUNT_WORDS):
+            lattice.word_value[name] = K * (place + 1)
+        cat_oak = play_kept_count(lattice, "two", "cat", "oak")
+        if cat_oak["answers"] != [
+            "no", "no", "yes", "yes", "no", "no", "yes", "no", "yes", "yes", "no",
+        ]:
+            raise RuntimeError(f"two cats then oak read {cat_oak['answers']}")
+        cat_dog = play_kept_count(lattice, "two", "cat", "dog")
+        if cat_dog["answers"] != [
+            "no", "no", "yes", "yes", "no", "no", "yes", "no", "yes", "yes", "no",
+        ]:
+            raise RuntimeError(f"two cats then dog read {cat_dog['answers']}")
+        rock_water = play_kept_count(lattice, "one", "rock", "water")
+        if rock_water["answers"] != [
+            "no", "no", "yes", "yes", "yes", "no", "yes", "no", "yes", "yes", "no",
+        ]:
+            raise RuntimeError(f"one rock then water read {rock_water['answers']}")
+        latest = play_count(lattice, "one", "cat")
+        if latest["answers"] != [
+            "no", "no", "yes", "yes", "no", "no", "no", "yes", "yes", "no", "yes",
+        ]:
+            raise RuntimeError(f"is it still reads only the latest count {latest['answers']}")
+        kept_kind = play_paragraph(lattice, "cat", "oak")
+        if kept_kind["answers"] != ["no", "yes", "no", "yes", "yes", "no"]:
+            raise RuntimeError(f"the kind paragraph left its answers {kept_kind['answers']}")
+        acc, _correct, misses, stats = score_kept_counts(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"offset kept-count read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR or stats["carry_max"] >= GAUGE_FLOOR:
+            raise RuntimeError(
+                f"offset kept-count carry {stats['true_max_abs']} / {stats['carry_max']}"
+            )
+        if stats["false_min_abs"] <= DROP:
+            raise RuntimeError(f"offset kept-count false remainder {stats['false_min_abs']}")
+    finally:
+        lattice.content_value.update(saved_content)
+        lattice.word_value.update(saved_words)
+        lattice.working = saved_working
+        lattice.counted = saved_counted
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+
+
+def _check_acquired(lattice: Lattice) -> None:
+    """A fresh noun starts at K, in the animal basin, then moves onto its kind.
+
+    The ten content gauges are the offset line for this check. The alignment
+    step reads those heads and restores every gauge it found.
+    """
+    if set(ACQUIRED_NOUNS) & set(CONTENT_WORDS):
+        raise RuntimeError("a new noun collided with the ten")
+    rows = all_acquired()
+    train, hold = split_acquired()
+    if len(rows) != len(ACQUIRED_NOUNS) * len(CONTENT_WORDS):
+        raise RuntimeError("the acquired table left the noun and word pairs")
+    if set(train) | set(hold) != set(rows) or set(train) & set(hold):
+        raise RuntimeError("the acquired split is not a partition")
+    if len(hold) * 5 != len(rows) or not train:
+        raise RuntimeError("the acquired split left the fifth")
+    heads = set(KIND_HEADS)
+    for side, side_rows in (("train", train), ("hold", hold)):
+        taught = {acquired_kind(row.noun) for row in side_rows if row.holds()}
+        if taught != heads:
+            raise RuntimeError(f"the acquired {side} split missed a head")
+    if Acquired("wolf", "animal").prompt() != "a wolf is an animal":
+        raise RuntimeError("a wolf is an animal left the acquired sentence")
+    if Acquired("hare", "animal").prompt() != "a hare is an animal":
+        raise RuntimeError("a hare is an animal left the acquired sentence")
+    if Acquired("pine", "plant").prompt() != "a pine is a plant":
+        raise RuntimeError("a pine is a plant left the acquired sentence")
+    pairs = all_acquired_pairs()
+    pair_train, pair_hold = split_acquired_pairs()
+    if len(pairs) != len(ACQUIRED_NOUNS) ** 2:
+        raise RuntimeError("the acquired pair table left the noun pairs")
+    if len(pair_hold) * 5 != len(pairs) or not pair_train:
+        raise RuntimeError("the acquired pair split left the fifth")
+    for side, side_rows in (("train", pair_train), ("hold", pair_hold)):
+        if not any(row.holds() for row in side_rows) or not any(not row.holds() for row in side_rows):
+            raise RuntimeError(f"the acquired pair {side} split hid a kind")
+    saved_content = dict(lattice.content_value)
+    saved_words = dict(lattice.word_value)
+    saved_digits = dict(lattice.digit_value)
+    saved_acquired = dict(lattice.acquired_value)
+    saved_self = dict(lattice.acquired_self)
+    saved_working = lattice.working
+    saved_counted = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    try:
+        for place, name in enumerate(CONTENT_WORDS):
+            lattice.content_value[name] = K * (place + 1)
+        for name in ACQUIRED_NOUNS:
+            lattice.acquired_value[name] = K
+        bare = lattice.kind_step(lattice.acquired_value["pine"])
+        if abs(bare - lattice.content_value["animal"]) > 1e-9:
+            raise RuntimeError("a fresh noun missed the animal basin")
+        if abs(bare - lattice.content_value["plant"]) <= DROP:
+            raise RuntimeError("a fresh noun already sat on plant")
+        history = settle_acquired(lattice)
+        last = history[-1]
+        if (
+            last["gauge_residual"] >= GAUGE_FLOOR
+            or last["train_acc"] < 1.0
+            or last["hold_acc"] < 1.0
+        ):
+            raise RuntimeError(
+                f"acquired gauges missed the head {last['gauge_residual']}"
+            )
+        acc, _correct, misses, stats = score_acquired(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"offset acquired read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR:
+            raise RuntimeError(f"offset acquired true remainder {stats['true_max_abs']}")
+        if stats["false_min_abs"] <= DROP:
+            raise RuntimeError(f"offset acquired false remainder {stats['false_min_abs']}")
+        pair_acc, _pair_n, pair_misses, pair_stats = score_acquired_pairs(lattice, pairs)
+        if pair_acc != 1.0 or pair_misses:
+            raise RuntimeError(f"offset acquired pair read {pair_misses[:3]}")
+        if pair_stats["true_max_abs"] >= GAUGE_FLOOR:
+            raise RuntimeError(f"offset acquired pair remainder {pair_stats['true_max_abs']}")
+        if pair_stats["false_min_abs"] <= DROP:
+            raise RuntimeError(f"offset acquired pair false {pair_stats['false_min_abs']}")
+        carried = play_acquired(lattice)
+        if carried["answers"] != ["no", "yes", "no", "no", "yes", "no", "yes"]:
+            raise RuntimeError(f"wolf then pine read {carried['answers']}")
+        if carried["carry_max"] >= GAUGE_FLOOR:
+            raise RuntimeError(f"wolf then pine carry {carried['carry_max']}")
+        idle_drift = acquired_idle_drift(lattice)
+        if idle_drift != 0.0:
+            raise RuntimeError(f"acquired idle drift {idle_drift}")
+        acc, _correct, misses, stats = score_acquired(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"reloaded acquired read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR:
+            raise RuntimeError(f"reloaded acquired true remainder {stats['true_max_abs']}")
+        if stats["false_min_abs"] <= DROP:
+            raise RuntimeError(f"reloaded acquired false remainder {stats['false_min_abs']}")
+        pair_acc, _pair_n, pair_misses, pair_stats = score_acquired_pairs(lattice, pairs)
+        if pair_acc != 1.0 or pair_misses:
+            raise RuntimeError(f"reloaded acquired pair read {pair_misses[:3]}")
+        if pair_stats["true_max_abs"] >= GAUGE_FLOOR:
+            raise RuntimeError(f"reloaded acquired pair remainder {pair_stats['true_max_abs']}")
+        if pair_stats["false_min_abs"] <= DROP:
+            raise RuntimeError(f"reloaded acquired pair false {pair_stats['false_min_abs']}")
+        reloaded = play_acquired(lattice)
+        if reloaded["answers"] != ["no", "yes", "no", "no", "yes", "no", "yes"]:
+            raise RuntimeError(f"reloaded wolf then pine read {reloaded['answers']}")
+        if reloaded["carry_max"] >= GAUGE_FLOOR:
+            raise RuntimeError(f"reloaded wolf then pine carry {reloaded['carry_max']}")
+        if lattice.digit_value != saved_digits or lattice.word_value != saved_words:
+            raise RuntimeError("acquired training moved an arithmetic gauge")
+        for place, name in enumerate(CONTENT_WORDS):
+            if lattice.content_value[name] != K * (place + 1):
+                raise RuntimeError("acquired training moved a content gauge")
+    finally:
+        lattice.content_value.update(saved_content)
+        lattice.word_value.update(saved_words)
+        lattice.digit_value.update(saved_digits)
+        lattice.acquired_value.update(saved_acquired)
+        lattice.acquired_self.update(saved_self)
+        lattice.working = saved_working
+        lattice.counted = saved_counted
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+
+
+def _check_acquired_self(lattice: Lattice) -> None:
+    """The individual sits beside the kind, on the same offset line.
+
+    Flat gauges at K agree with everyone. The alignment step separates
+    them. "a wolf is a cow" then reads no, and the kind question stays yes.
+    """
+    rows = all_acquired_selves()
+    train, hold = split_acquired_selves()
+    if len(rows) != len(ACQUIRED_NOUNS) ** 2:
+        raise RuntimeError("the individual table left the noun pairs")
+    if set(train) | set(hold) != set(rows) or set(train) & set(hold):
+        raise RuntimeError("the individual split is not a partition")
+    if len(hold) * 5 != len(rows) or not train:
+        raise RuntimeError("the individual split left the fifth")
+    for side, side_rows in (("train", train), ("hold", hold)):
+        if not any(row.holds() for row in side_rows) or not any(not row.holds() for row in side_rows):
+            raise RuntimeError(f"the individual {side} split hid a noun")
+    if AcquiredSelf("wolf", "wolf").prompt() != "a wolf is a wolf":
+        raise RuntimeError("a wolf is a wolf left the individual sentence")
+    if AcquiredSelf("wolf", "cow").prompt() != "a wolf is a cow":
+        raise RuntimeError("a wolf is a cow left the individual sentence")
+    if AcquiredSelf("wolf", "hare").prompt() != "a wolf is a hare":
+        raise RuntimeError("a wolf is a hare left the individual sentence")
+    saved_content = dict(lattice.content_value)
+    saved_words = dict(lattice.word_value)
+    saved_digits = dict(lattice.digit_value)
+    saved_acquired = dict(lattice.acquired_value)
+    saved_self = dict(lattice.acquired_self)
+    saved_working = lattice.working
+    saved_counted = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    try:
+        for name in ACQUIRED_NOUNS:
+            lattice.acquired_self[name] = K
+        if lattice.predict_acquired_self("wolf", "cow") != "yes":
+            raise RuntimeError("flat individuals already separated")
+        history = settle_acquired_self(lattice)
+        last = history[-1]
+        if (
+            last["gauge_residual"] >= GAUGE_FLOOR
+            or last["train_acc"] < 1.0
+            or last["hold_acc"] < 1.0
+        ):
+            raise RuntimeError(f"individual gauges missed the offset {last['gauge_residual']}")
+        acc, _correct, misses, stats = score_acquired_selves(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"individual read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR:
+            raise RuntimeError(f"individual true remainder {stats['true_max_abs']}")
+        if stats["false_min_abs"] <= DROP:
+            raise RuntimeError(f"individual false remainder {stats['false_min_abs']}")
+        if lattice.predict_acquired_self("wolf", "cow") != "no":
+            raise RuntimeError("a wolf is a cow stayed yes")
+        if lattice.predict_acquired_self("wolf", "wolf") != "yes":
+            raise RuntimeError("a wolf is a wolf read no")
+        if lattice.predict_acquired_self("wolf", "hare") != "no":
+            raise RuntimeError("a wolf is a hare stayed yes")
+        if lattice.predict_acquired("wolf", "animal") != "yes":
+            raise RuntimeError("the kind read left animal")
+        if lattice.predict_acquired_pair("wolf", "cow") != "yes":
+            raise RuntimeError("the kind agreement left wolf and cow")
+        idle_drift = acquired_idle_drift(lattice)
+        if idle_drift != 0.0:
+            raise RuntimeError(f"individual idle drift {idle_drift}")
+        acc, _correct, misses, stats = score_acquired_selves(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"reloaded individual read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR or stats["false_min_abs"] <= DROP:
+            raise RuntimeError("reloaded individual remainder crossed the drop")
+        if lattice.digit_value != saved_digits or lattice.word_value != saved_words:
+            raise RuntimeError("individual training moved an arithmetic gauge")
+        if lattice.content_value != saved_content or lattice.acquired_value != saved_acquired:
+            raise RuntimeError("individual training moved a kind gauge")
+    finally:
+        lattice.content_value.update(saved_content)
+        lattice.word_value.update(saved_words)
+        lattice.digit_value.update(saved_digits)
+        lattice.acquired_value.update(saved_acquired)
+        lattice.acquired_self.update(saved_self)
+        lattice.working = saved_working
+        lattice.counted = saved_counted
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+
+
+def _check_revision(lattice: Lattice) -> None:
+    """A later sentence moves the kind gauge. The individual stays.
+
+    One sentence moves wolf onto plant and leaves cow on animal. The closed
+    table then moves every noun onto its revised head with the same step.
+    """
+    rows = all_revisions()
+    train, hold = split_revisions()
+    if len(rows) != len(ACQUIRED_NOUNS) * len(CONTENT_WORDS):
+        raise RuntimeError("the revision table left the noun and word pairs")
+    if set(train) | set(hold) != set(rows) or set(train) & set(hold):
+        raise RuntimeError("the revision split is not a partition")
+    if len(hold) * 5 != len(rows) or not train:
+        raise RuntimeError("the revision split left the fifth")
+    for noun in ACQUIRED_NOUNS:
+        if acquired_revised_kind(noun) == acquired_kind(noun):
+            raise RuntimeError(f"{noun} revised onto the head it already had")
+    train_heads = {row.head for row in train if row.holds()}
+    hold_heads = {row.head for row in hold if row.holds()}
+    if train_heads != set(KIND_HEADS):
+        raise RuntimeError(f"the revision train split missed a head {train_heads}")
+    if hold_heads != {"animal", "plant", "water"}:
+        raise RuntimeError(f"the revision hold split missed a head {hold_heads}")
+    if not any(not row.holds() for row in hold):
+        raise RuntimeError("the revision hold split hid the false rows")
+    if AcquiredRevision("wolf", "plant", "plant").prompt() != "a wolf is a plant":
+        raise RuntimeError("a wolf is a plant left the revision sentence")
+    if AcquiredRevision("mist", "animal", "animal").prompt() != "a mist is an animal":
+        raise RuntimeError("a mist is an animal left the revision sentence")
+    pairs = all_revision_pairs()
+    pair_train, pair_hold = split_revision_pairs()
+    if len(pairs) != len(ACQUIRED_NOUNS) ** 2:
+        raise RuntimeError("the revision pairs left the noun square")
+    if len(pair_hold) * 5 != len(pairs):
+        raise RuntimeError("the revision pair split left the fifth")
+    saved_content = dict(lattice.content_value)
+    saved_words = dict(lattice.word_value)
+    saved_digits = dict(lattice.digit_value)
+    saved_acquired = dict(lattice.acquired_value)
+    saved_self = dict(lattice.acquired_self)
+    saved_working = lattice.working
+    saved_counted = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    try:
+        for place, name in enumerate(CONTENT_WORDS):
+            lattice.content_value[name] = K * (place + 1)
+        for name in ACQUIRED_NOUNS:
+            lattice.acquired_value[name] = K
+            lattice.acquired_self[name] = K
+        settle_acquired(lattice)
+        settle_acquired_self(lattice)
+        taught = dict(lattice.acquired_value)
+        individuals = dict(lattice.acquired_self)
+        if lattice.predict_acquired("wolf", "animal") != "yes":
+            raise RuntimeError("wolf left animal before the later sentence")
+        if lattice.predict_acquired_pair("wolf", "cow") != "yes":
+            raise RuntimeError("wolf and cow left the shared kind")
+        wolf = settle_revision(lattice, {"wolf": "plant"})
+        last = wolf[-1]
+        if last["gauge_residual"] >= GAUGE_FLOOR or last["train_acc"] < 1.0:
+            raise RuntimeError(f"wolf missed plant {last['gauge_residual']}")
+        if lattice.predict_acquired("wolf", "plant") != "yes":
+            raise RuntimeError("a wolf is a plant read no")
+        if lattice.predict_acquired("wolf", "animal") != "no":
+            raise RuntimeError("a wolf is an animal stayed yes")
+        if lattice.predict_acquired("cow", "animal") != "yes":
+            raise RuntimeError("cow left animal")
+        if lattice.predict_acquired_pair("wolf", "cow") != "no":
+            raise RuntimeError("wolf stayed with cow after the later sentence")
+        if lattice.predict_acquired_self("wolf", "wolf") != "yes":
+            raise RuntimeError("wolf left its own individual")
+        if lattice.predict_acquired_self("wolf", "cow") != "no":
+            raise RuntimeError("wolf became cow")
+        if lattice.acquired_self != individuals:
+            raise RuntimeError("the later sentence moved an individual")
+        for name in ACQUIRED_NOUNS:
+            if name != "wolf" and lattice.acquired_value[name] != taught[name]:
+                raise RuntimeError(f"the later sentence moved {name}")
+        lattice.acquired_value.update(taught)
+        revised = settle_revision(lattice, {name: acquired_revised_kind(name) for name in ACQUIRED_NOUNS})
+        last = revised[-1]
+        if (
+            last["gauge_residual"] >= GAUGE_FLOOR
+            or last["train_acc"] < 1.0
+            or last["hold_acc"] < 1.0
+        ):
+            raise RuntimeError(f"revision missed the new head {last['gauge_residual']}")
+        acc, _correct, misses, stats = score_acquired(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"revision read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR or stats["false_min_abs"] <= DROP:
+            raise RuntimeError("revision remainder crossed the drop")
+        pair_acc, _pair_n, pair_misses, pair_stats = score_acquired_pairs(lattice, pairs)
+        if pair_acc != 1.0 or pair_misses:
+            raise RuntimeError(f"revision pairs {pair_misses[:3]}")
+        if pair_stats["true_max_abs"] >= GAUGE_FLOOR or pair_stats["false_min_abs"] <= DROP:
+            raise RuntimeError("revision pair remainder crossed the drop")
+        self_acc, _self_n, self_misses, self_stats = score_acquired_selves(lattice, all_acquired_selves())
+        if self_acc != 1.0 or self_misses:
+            raise RuntimeError(f"revision moved the individual table {self_misses[:3]}")
+        if self_stats["true_max_abs"] >= GAUGE_FLOOR or self_stats["false_min_abs"] <= DROP:
+            raise RuntimeError("revision moved an individual remainder")
+        if lattice.acquired_self != individuals:
+            raise RuntimeError("the revision moved an individual gauge")
+        if acquired_idle_drift(lattice) != 0.0:
+            raise RuntimeError("revision idle drift")
+        if lattice.digit_value != saved_digits or lattice.word_value != saved_words:
+            raise RuntimeError("revision moved an arithmetic gauge")
+        for place, name in enumerate(CONTENT_WORDS):
+            if lattice.content_value[name] != K * (place + 1):
+                raise RuntimeError("revision moved a content gauge")
+    finally:
+        lattice.content_value.update(saved_content)
+        lattice.word_value.update(saved_words)
+        lattice.digit_value.update(saved_digits)
+        lattice.acquired_value.update(saved_acquired)
+        lattice.acquired_self.update(saved_self)
+        lattice.working = saved_working
+        lattice.counted = saved_counted
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+
+
+def _score_paragraphs(lattice: Lattice) -> dict:
+    """Train, hold, and the closed two-sentence paragraphs."""
+    train, hold = split_follows()
+    closed = all_follows()
+
+    def pack(rows: list) -> dict:
+        acc, correct, misses, stats = score_paragraphs(lattice, rows)
+        return {
+            "acc": acc,
+            "correct": correct,
+            "n": len(rows),
+            "misses": misses,
+            "true_max_abs": stats.get("true_max_abs", 0.0),
+            "false_min_abs": stats.get("false_min_abs", 0.0),
+            "carry_max": stats.get("carry_max", 0.0),
+        }
+
+    return {
+        "paragraph_train": pack(train),
+        "paragraph_hold": pack(hold),
+        "paragraph_closed": pack(closed),
+    }
+
+
+def _score_kept_counts(lattice: Lattice) -> dict:
+    """Train, hold, and the closed counted-then-kind paragraphs."""
+    train, hold = split_kept_counts()
+    closed = all_kept_counts()
+
+    def pack(rows: list) -> dict:
+        acc, correct, misses, stats = score_kept_counts(lattice, rows)
+        return {
+            "acc": acc,
+            "correct": correct,
+            "n": len(rows),
+            "misses": misses,
+            "true_max_abs": stats.get("true_max_abs", 0.0),
+            "false_min_abs": stats.get("false_min_abs", 0.0),
+            "carry_max": stats.get("carry_max", 0.0),
+        }
+
+    return {
+        "kept_count_train": pack(train),
+        "kept_count_hold": pack(hold),
+        "kept_count_closed": pack(closed),
+    }
+
+
+def _score_acquired(lattice: Lattice) -> dict:
+    """Train, hold, and the closed taught-noun table. The lattice is already settled."""
+    train, hold = split_acquired()
+    closed = all_acquired()
+    pair_train, pair_hold = split_acquired_pairs()
+    pair_closed = all_acquired_pairs()
+
+    def pack(rows: list, score) -> dict:
+        acc, correct, misses, stats = score(lattice, rows)
+        return {
+            "acc": acc,
+            "correct": correct,
+            "n": len(rows),
+            "misses": misses,
+            "true_max_abs": stats.get("true_max_abs", 0.0),
+            "false_min_abs": stats.get("false_min_abs", 0.0),
+        }
+
+    report = {
+        "acquired_train": pack(train, score_acquired),
+        "acquired_hold": pack(hold, score_acquired),
+        "acquired_closed": pack(closed, score_acquired),
+        "acquired_pair_train": pack(pair_train, score_acquired_pairs),
+        "acquired_pair_hold": pack(pair_hold, score_acquired_pairs),
+        "acquired_pair_closed": pack(pair_closed, score_acquired_pairs),
+        "acquired_residual": acquired_residual(lattice),
+    }
+    return report
+
+
+def _score_acquired_self(lattice: Lattice) -> dict:
+    """Train, hold, and the closed individual table. The lattice is already settled."""
+    train, hold = split_acquired_selves()
+    closed = all_acquired_selves()
+
+    def pack(rows: list) -> dict:
+        acc, correct, misses, stats = score_acquired_selves(lattice, rows)
+        return {
+            "acc": acc,
+            "correct": correct,
+            "n": len(rows),
+            "misses": misses,
+            "true_max_abs": stats.get("true_max_abs", 0.0),
+            "false_min_abs": stats.get("false_min_abs", 0.0),
+        }
+
+    return {
+        "acquired_self_train": pack(train),
+        "acquired_self_hold": pack(hold),
+        "acquired_self_closed": pack(closed),
+        "acquired_self_residual": acquired_self_residual(lattice),
+    }
+
+
+def _check_acquired_counts(lattice: Lattice) -> None:
+    """A taught noun takes the counted sentence. The clocks stay the number and the kind.
+
+    Fresh gauges sit together, so this check writes the offset line, settles
+    the noun gauges, and restores them.
+    """
+    rows = all_acquired_counts()
+    train, hold = split_acquired_counts()
+    if len(rows) != len(COUNT_WORDS) * len(ACQUIRED_NOUNS):
+        raise RuntimeError("the taught count left the number and noun pairs")
+    if set(train) | set(hold) != set(rows) or set(train) & set(hold):
+        raise RuntimeError("the taught count split is not a partition")
+    if len(hold) * 5 != len(rows) or not train:
+        raise RuntimeError("the taught count split left the fifth")
+    if {row.count for row in train} != set(COUNT_WORDS):
+        raise RuntimeError("the taught count train split missed a number word")
+    if {row.noun for row in train} != set(ACQUIRED_NOUNS):
+        raise RuntimeError("the taught count train split missed a noun")
+    if {row.kind() for row in hold} != set(KIND_HEADS):
+        raise RuntimeError("the taught count hold split missed a kind")
+    if {row.kind() for row in train} != set(KIND_HEADS):
+        raise RuntimeError("the taught count train split missed a kind")
+    if not any(row.kind_changes() for row in train) or not any(row.kind_changes() for row in hold):
+        raise RuntimeError("the taught count split hid every kind change on one side")
+    if not any(not row.kind_changes() for row in train) or not any(not row.kind_changes() for row in hold):
+        raise RuntimeError("the taught count split hid every repeated kind on one side")
+    sample = AcquiredCount("two", "wolf")
+    if sample.opening() != "two wolves":
+        raise RuntimeError("two wolves left the counted sentence")
+    if AcquiredCount("one", "wolf").opening() != "one wolf":
+        raise RuntimeError("one wolf left the counted sentence")
+    if AcquiredCount("two", "moss").opening() != "two mosses":
+        raise RuntimeError("two mosses left the counted sentence")
+    if Counted("two", "cat").opening() != "two cats" or Counted("two", "fish").opening() != "two fish":
+        raise RuntimeError("the counted plural left its prior")
+    if sample.next_count() != "three" or sample.next_noun() != "clay":
+        raise RuntimeError("two wolves left the next count")
+    if AcquiredCount("nine", "pond").next_count() != "one" or AcquiredCount("nine", "pond").next_noun() != "wolf":
+        raise RuntimeError("the taught count ring left pond")
+    saved_content = dict(lattice.content_value)
+    saved_words = dict(lattice.word_value)
+    saved_digits = dict(lattice.digit_value)
+    saved_acquired = dict(lattice.acquired_value)
+    saved_self = dict(lattice.acquired_self)
+    saved_working = lattice.working
+    saved_counted = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    try:
+        for place, name in enumerate(CONTENT_WORDS):
+            lattice.content_value[name] = K * (place + 1)
+        for place, name in enumerate(COUNT_WORDS):
+            lattice.word_value[name] = K * (place + 1)
+        for name in ACQUIRED_NOUNS:
+            lattice.acquired_value[name] = K
+            lattice.acquired_self[name] = K
+        settle_acquired(lattice)
+        taught = dict(lattice.acquired_value)
+        individuals = dict(lattice.acquired_self)
+        wolves = play_acquired_count(lattice, "two", "wolf")
+        if wolves["answers"] != [
+            "no", "no", "yes", "yes", "no", "no", "no", "yes", "yes", "no", "no",
+        ]:
+            raise RuntimeError(f"two wolves read {wolves['answers']}")
+        pines = play_acquired_count(lattice, "one", "pine")
+        if pines["answers"] != [
+            "no", "no", "yes", "yes", "no", "no", "no", "yes", "yes", "no", "yes",
+        ]:
+            raise RuntimeError(f"one pine read {pines['answers']}")
+        ponds = play_acquired_count(lattice, "nine", "pond")
+        if ponds["answers"] != [
+            "no", "no", "yes", "yes", "no", "no", "no", "yes", "yes", "no", "no",
+        ]:
+            raise RuntimeError(f"nine ponds read {ponds['answers']}")
+        cats = play_count(lattice, "one", "cat")
+        if cats["answers"] != [
+            "no", "no", "yes", "yes", "no", "no", "no", "yes", "yes", "no", "yes",
+        ]:
+            raise RuntimeError(f"one cat left its counted list {cats['answers']}")
+        acc, _correct, misses, stats = score_acquired_counts(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"taught count read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR or stats["carry_max"] >= GAUGE_FLOOR:
+            raise RuntimeError(
+                f"taught count carry {stats['true_max_abs']} / {stats['carry_max']}"
+            )
+        if stats["false_min_abs"] <= DROP:
+            raise RuntimeError(f"taught count false remainder {stats['false_min_abs']}")
+        if lattice.acquired_value != taught or lattice.acquired_self != individuals:
+            raise RuntimeError("a counted noun moved a taught gauge")
+        if lattice.digit_value != saved_digits:
+            raise RuntimeError("a counted noun moved a digit gauge")
+        for place, name in enumerate(CONTENT_WORDS):
+            if lattice.content_value[name] != K * (place + 1):
+                raise RuntimeError("a counted noun moved a content gauge")
+        for place, name in enumerate(COUNT_WORDS):
+            if lattice.word_value[name] != K * (place + 1):
+                raise RuntimeError("a counted noun moved a number word")
+    finally:
+        lattice.content_value.update(saved_content)
+        lattice.word_value.update(saved_words)
+        lattice.digit_value.update(saved_digits)
+        lattice.acquired_value.update(saved_acquired)
+        lattice.acquired_self.update(saved_self)
+        lattice.working = saved_working
+        lattice.counted = saved_counted
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+
+
+def _check_acquired_paragraphs(lattice: Lattice) -> None:
+    """Two taught nouns. The second sentence keeps the kind the first left.
+
+    "is it" still reads only the latest clock. Fresh gauges tie, so this
+    writes the offset line, settles the noun gauges, and restores them.
+    """
+    rows = all_acquired_paragraphs()
+    train, hold = split_acquired_paragraphs()
+    if len(rows) != len(ACQUIRED_NOUNS) ** 2:
+        raise RuntimeError("the taught paragraph left the ordered pairs")
+    if set(train) | set(hold) != set(rows) or set(train) & set(hold):
+        raise RuntimeError("the taught paragraph split is not a partition")
+    if len(hold) * 5 != len(rows) or not train:
+        raise RuntimeError("the taught paragraph split left the fifth")
+    if {row.first for row in train} != set(ACQUIRED_NOUNS):
+        raise RuntimeError("the taught paragraph train split missed a first noun")
+    if {row.second for row in train} != set(ACQUIRED_NOUNS):
+        raise RuntimeError("the taught paragraph train split missed a second noun")
+    if not any(row.same_kind() for row in train) or not any(row.same_kind() for row in hold):
+        raise RuntimeError("the taught paragraph split hid every repeated kind on one side")
+    if not any(not row.same_kind() for row in train) or not any(not row.same_kind() for row in hold):
+        raise RuntimeError("the taught paragraph split hid every kind change on one side")
+    sample = AcquiredParagraph("wolf", "pine")
+    if sample.text() != "a wolf is an animal. a pine is a plant":
+        raise RuntimeError("wolf then pine left the paragraph")
+    if sample.other_kind() != "rock":
+        raise RuntimeError("wolf then pine left rock as the outside head")
+    if AcquiredParagraph("cow", "hare").text() != "a cow is an animal. a hare is an animal":
+        raise RuntimeError("cow then hare left the paragraph")
+    saved_content = dict(lattice.content_value)
+    saved_words = dict(lattice.word_value)
+    saved_digits = dict(lattice.digit_value)
+    saved_acquired = dict(lattice.acquired_value)
+    saved_self = dict(lattice.acquired_self)
+    saved_working = lattice.working
+    saved_counted = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    try:
+        for place, name in enumerate(CONTENT_WORDS):
+            lattice.content_value[name] = K * (place + 1)
+        for name in ACQUIRED_NOUNS:
+            lattice.acquired_value[name] = K
+            lattice.acquired_self[name] = K
+        settle_acquired(lattice)
+        taught = dict(lattice.acquired_value)
+        individuals = dict(lattice.acquired_self)
+        wolves = play_acquired_paragraph(lattice, "wolf", "pine")
+        if wolves["answers"] != ["no", "yes", "no", "yes", "yes", "no"]:
+            raise RuntimeError(f"wolf then pine read {wolves['answers']}")
+        cows = play_acquired_paragraph(lattice, "cow", "hare")
+        if cows["answers"] != ["no", "yes", "yes", "yes", "yes", "no"]:
+            raise RuntimeError(f"cow then hare read {cows['answers']}")
+        ponds = play_acquired_paragraph(lattice, "mist", "pond")
+        if ponds["answers"] != ["no", "yes", "yes", "yes", "yes", "no"]:
+            raise RuntimeError(f"mist then pond read {ponds['answers']}")
+        latest = play_acquired(lattice)
+        if latest["answers"] != ["no", "yes", "no", "no", "yes", "no", "yes"]:
+            raise RuntimeError(f"is it still reads only the latest clock {latest['answers']}")
+        cats = play_paragraph(lattice, "cat", "oak")
+        if cats["answers"] != ["no", "yes", "no", "yes", "yes", "no"]:
+            raise RuntimeError(f"cat then oak left its paragraph {cats['answers']}")
+        acc, _correct, misses, stats = score_acquired_paragraphs(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"taught paragraph read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR or stats["carry_max"] >= GAUGE_FLOOR:
+            raise RuntimeError(
+                f"taught paragraph carry {stats['true_max_abs']} / {stats['carry_max']}"
+            )
+        if stats["false_min_abs"] <= DROP:
+            raise RuntimeError(f"taught paragraph false remainder {stats['false_min_abs']}")
+        if lattice.acquired_value != taught or lattice.acquired_self != individuals:
+            raise RuntimeError("a taught paragraph moved a noun gauge")
+        if lattice.digit_value != saved_digits or lattice.word_value != saved_words:
+            raise RuntimeError("a taught paragraph moved an arithmetic gauge")
+        for place, name in enumerate(CONTENT_WORDS):
+            if lattice.content_value[name] != K * (place + 1):
+                raise RuntimeError("a taught paragraph moved a content gauge")
+    finally:
+        lattice.content_value.update(saved_content)
+        lattice.word_value.update(saved_words)
+        lattice.digit_value.update(saved_digits)
+        lattice.acquired_value.update(saved_acquired)
+        lattice.acquired_self.update(saved_self)
+        lattice.working = saved_working
+        lattice.counted = saved_counted
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+
+
+def _check_acquired_facts(lattice: Lattice) -> None:
+    """Three taught nouns. The first kind survives both later sentences.
+
+    "is it" still reads only the latest clock. Fresh gauges tie, so this
+    writes the offset line, settles the noun gauges, and restores them.
+    """
+    rows = all_acquired_facts()
+    train, hold = split_acquired_facts()
+    if len(rows) != len(ACQUIRED_NOUNS) ** 3:
+        raise RuntimeError("the taught fact left the ordered triples")
+    if set(train) | set(hold) != set(rows) or set(train) & set(hold):
+        raise RuntimeError("the taught fact split is not a partition")
+    if len(hold) * 5 != len(rows) or not train:
+        raise RuntimeError("the taught fact split left the fifth")
+    if {row.first for row in train} != set(ACQUIRED_NOUNS):
+        raise RuntimeError("the taught fact train split missed a first noun")
+    if {row.second for row in train} != set(ACQUIRED_NOUNS):
+        raise RuntimeError("the taught fact train split missed a second noun")
+    if {row.third for row in train} != set(ACQUIRED_NOUNS):
+        raise RuntimeError("the taught fact train split missed a third noun")
+    if not any(row.first_alone() for row in train) or not any(row.first_alone() for row in hold):
+        raise RuntimeError("the taught fact split hid the surviving kind on one side")
+    if not any(len(set(row.kinds())) == 3 for row in train) or not any(len(set(row.kinds())) == 3 for row in hold):
+        raise RuntimeError("the taught fact split hid three kinds on one side")
+    if not any(row.one_kind() for row in train) or not any(row.one_kind() for row in hold):
+        raise RuntimeError("the taught fact split hid a repeated kind on one side")
+    sample = AcquiredFact("wolf", "pine", "clay")
+    if sample.text() != "a wolf is an animal. a pine is a plant. a clay is a rock":
+        raise RuntimeError("wolf then pine then clay left the fact")
+    if sample.outside_kind() != "water":
+        raise RuntimeError("wolf then pine then clay left water as the outside head")
+    if AcquiredFact("cow", "hare", "wolf").text() != "a cow is an animal. a hare is an animal. a wolf is an animal":
+        raise RuntimeError("cow then hare then wolf left the fact")
+    if AcquiredFact("mist", "pond", "boulder").text() != "a mist is a water. a pond is a water. a boulder is a rock":
+        raise RuntimeError("mist then pond then boulder left the fact")
+    saved_content = dict(lattice.content_value)
+    saved_words = dict(lattice.word_value)
+    saved_digits = dict(lattice.digit_value)
+    saved_acquired = dict(lattice.acquired_value)
+    saved_self = dict(lattice.acquired_self)
+    saved_working = lattice.working
+    saved_counted = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    try:
+        for place, name in enumerate(CONTENT_WORDS):
+            lattice.content_value[name] = K * (place + 1)
+        for name in ACQUIRED_NOUNS:
+            lattice.acquired_value[name] = K
+            lattice.acquired_self[name] = K
+        settle_acquired(lattice)
+        taught = dict(lattice.acquired_value)
+        individuals = dict(lattice.acquired_self)
+        wolves = play_acquired_fact(lattice, "wolf", "pine", "clay")
+        if wolves["answers"] != [
+            "no", "yes", "no", "yes", "yes", "no", "yes", "yes", "yes", "no",
+        ]:
+            raise RuntimeError(f"wolf then pine then clay read {wolves['answers']}")
+        cows = play_acquired_fact(lattice, "cow", "hare", "wolf")
+        if cows["answers"] != [
+            "no", "yes", "yes", "yes", "yes", "yes", "yes", "yes", "yes", "no",
+        ]:
+            raise RuntimeError(f"cow then hare then wolf read {cows['answers']}")
+        ponds = play_acquired_fact(lattice, "mist", "pond", "boulder")
+        if ponds["answers"] != [
+            "no", "yes", "yes", "yes", "yes", "no", "yes", "yes", "yes", "no",
+        ]:
+            raise RuntimeError(f"mist then pond then boulder read {ponds['answers']}")
+        lattice.clear_working()
+        lattice.deposit_acquired("wolf")
+        lattice.deposit_acquired("pine")
+        lattice.deposit_acquired("clay")
+        if lattice.predict_it("rock") != "yes" or lattice.predict_it("plant") != "no" or lattice.predict_it("animal") != "no":
+            raise RuntimeError("is it left the latest clock after two replacements")
+        if lattice.remainder_answer(lattice.it_surviving_remainder("animal")) != "yes":
+            raise RuntimeError("animal left after two replacements")
+        if lattice.remainder_answer(lattice.it_surviving_remainder("plant")) != "yes":
+            raise RuntimeError("plant left after one replacement")
+        if lattice.remainder_answer(lattice.it_surviving_remainder("water")) != "no":
+            raise RuntimeError("water arrived without a sentence")
+        latest = play_acquired(lattice)
+        if latest["answers"] != ["no", "yes", "no", "no", "yes", "no", "yes"]:
+            raise RuntimeError(f"is it still reads only the latest clock {latest['answers']}")
+        pines = play_acquired_paragraph(lattice, "wolf", "pine")
+        if pines["answers"] != ["no", "yes", "no", "yes", "yes", "no"]:
+            raise RuntimeError(f"wolf then pine left its paragraph {pines['answers']}")
+        cats = play_paragraph(lattice, "cat", "oak")
+        if cats["answers"] != ["no", "yes", "no", "yes", "yes", "no"]:
+            raise RuntimeError(f"cat then oak left its paragraph {cats['answers']}")
+        acc, _correct, misses, stats = score_acquired_facts(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"taught fact read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR or stats["carry_max"] >= GAUGE_FLOOR:
+            raise RuntimeError(
+                f"taught fact carry {stats['true_max_abs']} / {stats['carry_max']}"
+            )
+        if stats["false_min_abs"] <= DROP:
+            raise RuntimeError(f"taught fact false remainder {stats['false_min_abs']}")
+        if lattice.acquired_value != taught or lattice.acquired_self != individuals:
+            raise RuntimeError("a taught fact moved a noun gauge")
+        if lattice.digit_value != saved_digits or lattice.word_value != saved_words:
+            raise RuntimeError("a taught fact moved an arithmetic gauge")
+        for place, name in enumerate(CONTENT_WORDS):
+            if lattice.content_value[name] != K * (place + 1):
+                raise RuntimeError("a taught fact moved a content gauge")
+    finally:
+        lattice.content_value.update(saved_content)
+        lattice.word_value.update(saved_words)
+        lattice.digit_value.update(saved_digits)
+        lattice.acquired_value.update(saved_acquired)
+        lattice.acquired_self.update(saved_self)
+        lattice.working = saved_working
+        lattice.counted = saved_counted
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
 
 
 def _score_counts(lattice: Lattice) -> dict:
@@ -4938,6 +5934,78 @@ def _score_counts(lattice: Lattice) -> dict:
         "count_train": pack(train),
         "count_hold": pack(hold),
         "count_closed": pack(closed),
+    }
+
+
+def _score_acquired_counts(lattice: Lattice) -> dict:
+    """Train, hold, and the closed counted table of taught nouns."""
+    train, hold = split_acquired_counts()
+    closed = all_acquired_counts()
+
+    def pack(rows: list) -> dict:
+        acc, correct, misses, stats = score_acquired_counts(lattice, rows)
+        return {
+            "acc": acc,
+            "correct": correct,
+            "n": len(rows),
+            "misses": misses,
+            "true_max_abs": stats.get("true_max_abs", 0.0),
+            "false_min_abs": stats.get("false_min_abs", 0.0),
+            "carry_max": stats.get("carry_max", 0.0),
+        }
+
+    return {
+        "acquired_count_train": pack(train),
+        "acquired_count_hold": pack(hold),
+        "acquired_count_closed": pack(closed),
+    }
+
+
+def _score_acquired_paragraphs(lattice: Lattice) -> dict:
+    """Train, hold, and the closed paragraph table of taught nouns."""
+    train, hold = split_acquired_paragraphs()
+    closed = all_acquired_paragraphs()
+
+    def pack(rows: list) -> dict:
+        acc, correct, misses, stats = score_acquired_paragraphs(lattice, rows)
+        return {
+            "acc": acc,
+            "correct": correct,
+            "n": len(rows),
+            "misses": misses,
+            "true_max_abs": stats.get("true_max_abs", 0.0),
+            "false_min_abs": stats.get("false_min_abs", 0.0),
+            "carry_max": stats.get("carry_max", 0.0),
+        }
+
+    return {
+        "acquired_paragraph_train": pack(train),
+        "acquired_paragraph_hold": pack(hold),
+        "acquired_paragraph_closed": pack(closed),
+    }
+
+
+def _score_acquired_facts(lattice: Lattice) -> dict:
+    """Train, hold, and the closed fact table of taught nouns."""
+    train, hold = split_acquired_facts()
+    closed = all_acquired_facts()
+
+    def pack(rows: list) -> dict:
+        acc, correct, misses, stats = score_acquired_facts(lattice, rows)
+        return {
+            "acc": acc,
+            "correct": correct,
+            "n": len(rows),
+            "misses": misses,
+            "true_max_abs": stats.get("true_max_abs", 0.0),
+            "false_min_abs": stats.get("false_min_abs", 0.0),
+            "carry_max": stats.get("carry_max", 0.0),
+        }
+
+    return {
+        "acquired_fact_train": pack(train),
+        "acquired_fact_hold": pack(hold),
+        "acquired_fact_closed": pack(closed),
     }
 
 
@@ -5554,6 +6622,13 @@ def score_generated(lattice: Lattice) -> dict:
     report.update(_score_statements(lattice))
     report.update(_score_follows(lattice))
     report.update(_score_counts(lattice))
+    report.update(_score_acquired_counts(lattice))
+    report.update(_score_acquired_paragraphs(lattice))
+    report.update(_score_acquired_facts(lattice))
+    report.update(_score_paragraphs(lattice))
+    report.update(_score_kept_counts(lattice))
+    report.update(_score_acquired(lattice))
+    report.update(_score_acquired_self(lattice))
     report["demos"] = _demos(lattice)
     report["ok"] = generated_ok(report)
     return report
@@ -5807,6 +6882,67 @@ def generated_ok(report: dict) -> bool:
         if block["true_max_abs"] >= GAUGE_FLOOR or block["carry_max"] >= GAUGE_FLOOR:
             return False
         if block["false_min_abs"] <= DROP:
+            return False
+    for split in ("train", "hold", "closed"):
+        block = report[f"acquired_count_{split}"]
+        if not _exact(block):
+            return False
+        if block["true_max_abs"] >= GAUGE_FLOOR or block["carry_max"] >= GAUGE_FLOOR:
+            return False
+        if block["false_min_abs"] <= DROP:
+            return False
+    for split in ("train", "hold", "closed"):
+        block = report[f"acquired_paragraph_{split}"]
+        if not _exact(block):
+            return False
+        if block["true_max_abs"] >= GAUGE_FLOOR or block["carry_max"] >= GAUGE_FLOOR:
+            return False
+        if block["false_min_abs"] <= DROP:
+            return False
+    for split in ("train", "hold", "closed"):
+        block = report[f"acquired_fact_{split}"]
+        if not _exact(block):
+            return False
+        if block["true_max_abs"] >= GAUGE_FLOOR or block["carry_max"] >= GAUGE_FLOOR:
+            return False
+        if block["false_min_abs"] <= DROP:
+            return False
+    for split in ("train", "hold", "closed"):
+        block = report[f"paragraph_{split}"]
+        if not _exact(block):
+            return False
+        if block["true_max_abs"] >= GAUGE_FLOOR or block["carry_max"] >= GAUGE_FLOOR:
+            return False
+        if block["false_min_abs"] <= DROP:
+            return False
+    for split in ("train", "hold", "closed"):
+        block = report[f"kept_count_{split}"]
+        if not _exact(block):
+            return False
+        if block["true_max_abs"] >= GAUGE_FLOOR or block["carry_max"] >= GAUGE_FLOOR:
+            return False
+        if block["false_min_abs"] <= DROP:
+            return False
+    if report["acquired_residual"] >= GAUGE_FLOOR:
+        return False
+    for split in ("train", "hold", "closed"):
+        block = report[f"acquired_{split}"]
+        if not _exact(block):
+            return False
+        if block["true_max_abs"] >= GAUGE_FLOOR or block["false_min_abs"] <= DROP:
+            return False
+        pair = report[f"acquired_pair_{split}"]
+        if not _exact(pair):
+            return False
+        if pair["true_max_abs"] >= GAUGE_FLOOR or pair["false_min_abs"] <= DROP:
+            return False
+    if report["acquired_self_residual"] >= GAUGE_FLOOR:
+        return False
+    for split in ("train", "hold", "closed"):
+        block = report[f"acquired_self_{split}"]
+        if not _exact(block):
+            return False
+        if block["true_max_abs"] >= GAUGE_FLOOR or block["false_min_abs"] <= DROP:
             return False
     return True
 

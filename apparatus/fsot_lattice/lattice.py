@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import json
 import math
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,13 +62,26 @@ from fsot_lattice.engine import (
 from fsot_lattice.tasks import (
     DIGITS,
     OP_WORD,
+    ACQUIRED_NOUNS,
     CONTENT_WORDS,
     KIND_HEADS,
     KIND_STEPS,
     OPPOSED_KIND,
     WORD_OF,
+    AcquiredCount,
+    AcquiredFact,
+    AcquiredParagraph,
     Counted,
+    FollowUp,
+    AcquiredRevision,
+    acquired_kind,
+    all_acquired,
+    all_acquired_pairs,
+    split_revisions,
     content_kind,
+    split_acquired,
+    split_acquired_pairs,
+    split_acquired_selves,
     Chain,
     Claim,
     HundredOp,
@@ -151,13 +165,28 @@ class Lattice:
     carrier_ortho: list[float]
     bonds: list[list[float]]
     content_value: dict[str, float]
+    # Nouns taught by a sentence. Each starts at K and moves onto a kind head.
+    # The head gauges stay put. These gauges are not masks.
+    acquired_value: dict[str, float]
+    # The individual beside the kind. Same offset line as the content words,
+    # in its own dict. Wolf and cow share a kind gauge and keep two of these.
+    acquired_self: dict[str, float]
     frozen_digits: dict[str, float] | None = None
     width: int = WIDTH
     # The circulating clocks. Zero is empty. A named sentence writes its kind
-    # gauge on `working`. A counted sentence also writes the number-word gauge
-    # on `counted`. A question reads the clocks and leaves them.
+    # gauge on `working`, moves the previous kind to `earlier`, and moves the
+    # kind before that to `earliest`. A counted sentence also writes the
+    # number-word gauge on `counted` and shifts the count clocks the same way.
+    # A question reads the clocks and leaves them. "is it" reads the latest
+    # clock. A paragraph read also sees `earlier`. A fact read also sees
+    # `earliest`. A kept count also sees `earlier_count`. The latest count
+    # read stays on `counted`.
     working: float = 0.0
     counted: float = 0.0
+    earlier: float = 0.0
+    earlier_count: float = 0.0
+    earliest: float = 0.0
+    earliest_count: float = 0.0
 
     @classmethod
     def fresh(cls) -> "Lattice":
@@ -174,6 +203,8 @@ class Lattice:
         word_value["is"] = K
         # Content words start flat at the rest unit, then move onto the offset line.
         content_value = {word: K for word in CONTENT_WORDS}
+        acquired_value = {word: K for word in ACQUIRED_NOUNS}
+        acquired_self = {word: K for word in ACQUIRED_NOUNS}
         bonds = [[0.0] * WIDTH for _ in range(WIDTH)]
         plus, minus, ortho = _quantity_carriers()
         return cls(
@@ -185,8 +216,14 @@ class Lattice:
             carrier_ortho=ortho,
             bonds=bonds,
             content_value=content_value,
+            acquired_value=acquired_value,
+            acquired_self=acquired_self,
             working=0.0,
             counted=0.0,
+            earlier=0.0,
+            earlier_count=0.0,
+            earliest=0.0,
+            earliest_count=0.0,
         )
 
     def symbol_vector(self, symbol: str, surface: str) -> list[float]:
@@ -421,17 +458,41 @@ class Lattice:
         """An empty carrier. The next question has no noun and no count."""
         self.working = 0.0
         self.counted = 0.0
+        self.earlier = 0.0
+        self.earlier_count = 0.0
+        self.earliest = 0.0
+        self.earliest_count = 0.0
+
+    def _keep_previous(self) -> None:
+        """The sentence about to be written becomes the latest. The older two stay."""
+        self.earliest = self.earlier
+        self.earliest_count = self.earlier_count
+        self.earlier = self.working
+        self.earlier_count = self.counted
 
     def deposit_kind(self, subject: str) -> float:
         """Leave this subject's kind gauge. A kind sentence names no count."""
+        self._keep_previous()
         self.working = self.kind_step(self.content_value[subject])
         self.counted = 0.0
         return self.working
 
     def deposit_count(self, count: str, subject: str) -> tuple[float, float]:
         """Leave the number-word gauge and this subject's kind gauge."""
+        self._keep_previous()
         self.counted = self.word_value[count]
         self.working = self.kind_step(self.content_value[subject])
+        return self.counted, self.working
+
+    def deposit_acquired_count(self, count: str, noun: str) -> tuple[float, float]:
+        """Leave the number-word gauge and the kind this taught noun steps to.
+
+        The noun gauge and the individual gauge stay put. The clocks hold
+        the number and the kind.
+        """
+        self._keep_previous()
+        self.counted = self.word_value[count]
+        self.working = self.kind_step(self.acquired_value[noun])
         return self.counted, self.working
 
     def it_remainder(self, stated: str) -> float:
@@ -455,6 +516,89 @@ class Lattice:
 
     def predict_count(self, count: str) -> str:
         return self.remainder_answer(self.it_count_remainder(count))
+
+    def it_kept_remainder(self, stated: str) -> float:
+        """The closer of the latest kind and the kind kept from the sentence before."""
+        latest = self.it_remainder(stated)
+        previous = self.consensus_quantity(
+            self.earlier,
+            self.content_value[stated],
+            self.routed_sign("-"),
+        )
+        if abs(previous) < abs(latest):
+            return previous
+        return latest
+
+    def it_surviving_remainder(self, stated: str) -> float:
+        """The closer of the latest kind and the two kinds kept before it."""
+        best = self.it_kept_remainder(stated)
+        older = self.consensus_quantity(
+            self.earliest,
+            self.content_value[stated],
+            self.routed_sign("-"),
+        )
+        if abs(older) < abs(best):
+            return older
+        return best
+
+    def predict_kept(self, stated: str) -> str:
+        return self.remainder_answer(self.it_kept_remainder(stated))
+
+    def it_kept_count_remainder(self, count: str) -> float:
+        """The closer of the latest count and the count kept from the sentence before."""
+        latest = self.it_count_remainder(count)
+        previous = self.consensus_quantity(
+            self.earlier_count,
+            self.word_value[count],
+            self.routed_sign("-"),
+        )
+        if abs(previous) < abs(latest):
+            return previous
+        return latest
+
+    def predict_kept_count(self, count: str) -> str:
+        return self.remainder_answer(self.it_kept_count_remainder(count))
+
+    def acquired_remainder(self, noun: str, stated: str) -> float:
+        """One kind step of a taught noun, minus the stated content gauge."""
+        vessel = self.kind_step(self.acquired_value[noun])
+        return self.consensus_quantity(
+            vessel,
+            self.content_value[stated],
+            self.routed_sign("-"),
+        )
+
+    def predict_acquired(self, noun: str, stated: str) -> str:
+        return self.remainder_answer(self.acquired_remainder(noun, stated))
+
+    def acquired_pair_remainder(self, left: str, right: str) -> float:
+        """Difference of two taught gauges. Same kind agrees."""
+        return self.consensus_quantity(
+            self.acquired_value[left],
+            self.acquired_value[right],
+            self.routed_sign("-"),
+        )
+
+    def predict_acquired_pair(self, left: str, right: str) -> str:
+        return self.remainder_answer(self.acquired_pair_remainder(left, right))
+
+    def acquired_self_remainder(self, left: str, right: str) -> float:
+        """Difference of two individual gauges. The same noun cancels."""
+        return self.consensus_quantity(
+            self.acquired_self[left],
+            self.acquired_self[right],
+            self.routed_sign("-"),
+        )
+
+    def predict_acquired_self(self, left: str, right: str) -> str:
+        return self.remainder_answer(self.acquired_self_remainder(left, right))
+
+    def deposit_acquired(self, noun: str) -> float:
+        """Leave the kind this taught noun steps to. The noun gauge stays put."""
+        self._keep_previous()
+        self.working = self.kind_step(self.acquired_value[noun])
+        self.counted = 0.0
+        return self.working
 
     def order_answer(self, remainder: float) -> str:
         """Same when the remainder collapses. The sign names less or more."""
@@ -1456,7 +1600,14 @@ class Lattice:
     def learned_parameter_count(self) -> int:
         """Digit gauges, number-word gauges, and surviving bonds. Masks and carriers are priors."""
         bonds = sum(1 for row in self.bonds for weight in row if weight != 0.0)
-        return len(self.digit_value) + len(WORD_OF) + len(self.content_value) + bonds
+        return (
+            len(self.digit_value)
+            + len(WORD_OF)
+            + len(self.content_value)
+            + len(self.acquired_value)
+            + len(self.acquired_self)
+            + bonds
+        )
 
     def snapshot_digits(self) -> dict[str, float]:
         return dict(self.digit_value)
@@ -1662,6 +1813,7 @@ def gauge_residual(values: dict[str, float]) -> float:
 
 
 def write_engrams(path: Path, lattice: Lattice, pin: str, meta: dict) -> None:
+    """Idle snapshot. Noun gauges are stored. The clocks stay in memory."""
     bonds = []
     for i, row in enumerate(lattice.bonds):
         for j, weight in enumerate(row):
@@ -1674,6 +1826,8 @@ def write_engrams(path: Path, lattice: Lattice, pin: str, meta: dict) -> None:
         "coherence_gate": COHERENCE_GATE,
         "frozen_digit_value": lattice.frozen_digits,
         "word_value": lattice.word_value,
+        "acquired_value": dict(lattice.acquired_value),
+        "acquired_self": dict(lattice.acquired_self),
         "bonds": bonds,
         "meta": meta,
     }
@@ -1685,6 +1839,76 @@ def reload_frozen_digits(path: Path) -> dict[str, float]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     frozen = payload["frozen_digit_value"]
     return {key: float(value) for key, value in frozen.items()}
+
+
+def reload_acquired(path: Path) -> dict[str, float]:
+    """Kind gauges from an idle snapshot. The clocks are not in that file."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    stored = payload["acquired_value"]
+    return {key: float(value) for key, value in stored.items()}
+
+
+def reload_acquired_self(path: Path) -> dict[str, float]:
+    """Individual gauges from an idle snapshot."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    stored = payload["acquired_self"]
+    return {key: float(value) for key, value in stored.items()}
+
+
+def acquired_idle_drift(lattice: Lattice) -> float:
+    """Write the noun gauges to a scratch snapshot and read them back.
+
+    Memory is cleared before the read, so a drift of 0 is the file. The
+    clocks stay as they were. The lattice keeps the reloaded gauges.
+    """
+    snapshot = dict(lattice.acquired_value)
+    snapshot_self = dict(lattice.acquired_self)
+    clocks = (
+        lattice.working,
+        lattice.counted,
+        lattice.earlier,
+        lattice.earlier_count,
+        lattice.earliest,
+        lattice.earliest_count,
+    )
+    handle = tempfile.NamedTemporaryFile(
+        prefix="fsot-acquired-idle-", suffix=".json", delete=False
+    )
+    path = Path(handle.name)
+    handle.close()
+    try:
+        write_engrams(path, lattice, "acquired-idle", {"phase": "acquired_idle"})
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for key in ("working", "counted", "earlier", "earlier_count", "earliest", "earliest_count"):
+            if key in payload:
+                raise RuntimeError("idle stored a clock")
+        if set(payload.get("acquired_value") or {}) != set(ACQUIRED_NOUNS):
+            raise RuntimeError("idle dropped a noun")
+        if set(payload.get("acquired_self") or {}) != set(ACQUIRED_NOUNS):
+            raise RuntimeError("idle dropped an individual")
+        for name in ACQUIRED_NOUNS:
+            lattice.acquired_value[name] = 0.0
+            lattice.acquired_self[name] = 0.0
+        loaded = reload_acquired(path)
+        loaded_self = reload_acquired_self(path)
+        lattice.acquired_value = {name: loaded[name] for name in ACQUIRED_NOUNS}
+        lattice.acquired_self = {name: loaded_self[name] for name in ACQUIRED_NOUNS}
+    finally:
+        path.unlink(missing_ok=True)
+    if (
+        lattice.working,
+        lattice.counted,
+        lattice.earlier,
+        lattice.earlier_count,
+        lattice.earliest,
+        lattice.earliest_count,
+    ) != clocks:
+        raise RuntimeError("idle reload moved a clock")
+    kind_drift = max(abs(snapshot[name] - lattice.acquired_value[name]) for name in ACQUIRED_NOUNS)
+    self_drift = max(
+        abs(snapshot_self[name] - lattice.acquired_self[name]) for name in ACQUIRED_NOUNS
+    )
+    return max(kind_drift, self_drift)
 
 
 def apply_digit_epoch(lattice: Lattice, rows: list[Triple], hits: float) -> tuple[float, float]:
@@ -1799,6 +2023,357 @@ def apply_content_epoch(lattice: Lattice, rows: list, hits: float) -> tuple[floa
     return mse + align_mse, lr
 
 
+def acquired_residual(lattice: Lattice) -> float:
+    """Widest miss of a taught noun against the live head it was given."""
+    worst = 0.0
+    for name in ACQUIRED_NOUNS:
+        target = lattice.content_value[acquired_kind(name)]
+        worst = max(worst, abs(lattice.acquired_value[name] - target))
+    return worst
+
+
+def apply_acquired_epoch(lattice: Lattice, hits: float) -> tuple[float, float]:
+    """Pull each new noun onto the live gauge of its kind.
+
+    Same alignment step as the content offset. The head is the target and
+    is not updated. Digit gauges, number-word gauges, and the ten content
+    gauges stay out of the step.
+    """
+    names = list(ACQUIRED_NOUNS)
+    grad = {name: 0.0 for name in names}
+    align = 0.0
+    for name in names:
+        err = lattice.content_value[acquired_kind(name)] - lattice.acquired_value[name]
+        grad[name] += err
+        align += err * err
+    align_mse = align / len(names)
+    lr = fluid_lr(align_mse, hits) * GAUGE_GAIN
+    for name in names:
+        lattice.acquired_value[name] += lr * grad[name] / len(names)
+    return align_mse, lr
+
+
+def revision_residual(lattice: Lattice, targets: dict[str, str]) -> float:
+    """Widest miss of a revised noun against the head the later sentence named."""
+    worst = 0.0
+    for name, head in targets.items():
+        worst = max(worst, abs(lattice.acquired_value[name] - lattice.content_value[head]))
+    return worst
+
+
+def revision_spread(lattice: Lattice, targets: dict[str, str]) -> float:
+    """Widest gap between two nouns a later sentence put on one head."""
+    groups: dict[str, list[float]] = {}
+    for name, head in targets.items():
+        groups.setdefault(head, []).append(lattice.acquired_value[name])
+    worst = 0.0
+    for gauges in groups.values():
+        if len(gauges) > 1:
+            worst = max(worst, max(gauges) - min(gauges))
+    return worst
+
+
+def apply_revision_epoch(lattice: Lattice, targets: dict[str, str], hits: float) -> tuple[float, float]:
+    """Pull the named nouns onto a new head. The individual gauges stay out."""
+    names = list(targets)
+    grad = {name: 0.0 for name in names}
+    align = 0.0
+    for name, head in targets.items():
+        err = lattice.content_value[head] - lattice.acquired_value[name]
+        grad[name] += err
+        align += err * err
+    align_mse = align / len(names)
+    lr = fluid_lr(align_mse, hits) * GAUGE_GAIN
+    for name in names:
+        lattice.acquired_value[name] += lr * grad[name] / len(names)
+    return align_mse, lr
+
+
+def settle_revision(lattice: Lattice, targets: dict[str, str], epochs: int = 500) -> list[dict]:
+    """Move the named kind gauges onto the later sentence. Individuals stay put.
+
+    Nouns that meet on one head keep the same step until their spread is
+    inside the floor. A gauge that arrives from below and a gauge that
+    arrives from above can each sit inside the residual and still disagree.
+    """
+    if set(targets) == set(ACQUIRED_NOUNS):
+        train, hold = split_revisions()
+    else:
+        rows = [
+            AcquiredRevision(noun, stated, targets[noun])
+            for noun in targets
+            for stated in CONTENT_WORDS
+        ]
+        train, hold = rows, rows
+    history: list[dict] = []
+    hits = 0.0
+    for epoch in range(epochs):
+        mse, lr = apply_revision_epoch(lattice, targets, hits)
+        train_acc, train_n, _, _ = score_acquired(lattice, train)
+        hold_acc, hold_n, _, _ = score_acquired(lattice, hold)
+        residual = revision_residual(lattice, targets)
+        spread = revision_spread(lattice, targets)
+        hits = train_acc * len(train)
+        history.append(
+            {
+                "epoch": epoch,
+                "mse": mse,
+                "lr": lr,
+                "train_acc": train_acc,
+                "hold_acc": hold_acc,
+                "train_correct": train_n,
+                "hold_correct": hold_n,
+                "gauge_residual": residual,
+            }
+        )
+        if residual < 1e-4 and spread < 1e-4 and train_acc >= 1.0 and hold_acc >= 1.0:
+            break
+    return history
+
+
+def score_acquired(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """Yes when the stated content word is the head the noun was taught."""
+    if not rows:
+        return 0.0, 0, [], {}
+    misses: list[str] = []
+    correct = 0
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    for row in rows:
+        remainder = lattice.acquired_remainder(row.noun, row.stated)
+        got = lattice.remainder_answer(remainder)
+        if row.holds():
+            true_abs.append(abs(remainder))
+        else:
+            false_abs.append(abs(remainder))
+        if got == row.answer():
+            correct += 1
+        elif len(misses) < 8:
+            misses.append(f"{row.prompt()} -> {got} (want {row.answer()})")
+    stats = {
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+    }
+    return correct / len(rows), correct, misses, stats
+
+
+def score_acquired_pairs(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """Same taught kind agrees. A different kind clears the drop."""
+    if not rows:
+        return 0.0, 0, [], {}
+    misses: list[str] = []
+    correct = 0
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    for row in rows:
+        remainder = lattice.acquired_pair_remainder(row.left, row.right)
+        got = lattice.remainder_answer(remainder)
+        if row.holds():
+            true_abs.append(abs(remainder))
+        else:
+            false_abs.append(abs(remainder))
+        if got == row.answer():
+            correct += 1
+        elif len(misses) < 8:
+            misses.append(f"{row.prompt()} -> {got} (want {row.answer()})")
+    stats = {
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+    }
+    return correct / len(rows), correct, misses, stats
+
+
+def settle_acquired(lattice: Lattice, epochs: int = 500) -> list[dict]:
+    """Move the new nouns onto their heads. Stops once the table is exact."""
+    train, hold = split_acquired()
+    history: list[dict] = []
+    hits = 0.0
+    for epoch in range(epochs):
+        mse, lr = apply_acquired_epoch(lattice, hits)
+        train_acc, train_n, _, _ = score_acquired(lattice, train)
+        hold_acc, hold_n, _, _ = score_acquired(lattice, hold)
+        residual = acquired_residual(lattice)
+        hits = train_acc * len(train)
+        history.append(
+            {
+                "epoch": epoch,
+                "mse": mse,
+                "lr": lr,
+                "train_acc": train_acc,
+                "hold_acc": hold_acc,
+                "train_correct": train_n,
+                "hold_correct": hold_n,
+                "gauge_residual": residual,
+            }
+        )
+        if residual < 1e-4 and train_acc >= 1.0 and hold_acc >= 1.0:
+            break
+    return history
+
+
+def acquired_self_residual(lattice: Lattice) -> float:
+    """Widest miss of an individual gauge against its offset."""
+    worst = 0.0
+    for place, name in enumerate(ACQUIRED_NOUNS):
+        worst = max(worst, abs(lattice.acquired_self[name] - content_offset(place)))
+    return worst
+
+
+def apply_acquired_self_epoch(lattice: Lattice, hits: float) -> tuple[float, float]:
+    """Pull each individual onto K times its place.
+
+    Same alignment step as the content offset, then the train-split
+    difference. The kind gauges stay out of the step.
+    """
+    names = list(ACQUIRED_NOUNS)
+    index = {name: place for place, name in enumerate(names)}
+    grad = {name: 0.0 for name in names}
+    align = 0.0
+    for name in names:
+        err = content_offset(index[name]) - lattice.acquired_self[name]
+        grad[name] += err
+        align += err * err
+    align_mse = align / len(names)
+    lr = fluid_lr(align_mse, hits) * GAUGE_GAIN
+    for name in names:
+        lattice.acquired_self[name] += lr * grad[name] / len(names)
+    if align_mse > 1e-4:
+        return align_mse, lr
+
+    rows, _hold = split_acquired_selves()
+    loss = 0.0
+    grad = {name: 0.0 for name in names}
+    for row in rows:
+        target = K * (index[row.left] - index[row.right])
+        pred = lattice.acquired_self[row.left] - lattice.acquired_self[row.right]
+        err = target - pred
+        grad[row.left] += err
+        grad[row.right] -= err
+        loss += err * err
+    n = max(len(rows), 1)
+    mse = loss / n
+    lr = fluid_lr(max(mse, align_mse), hits) * GAUGE_GAIN
+    for name in names:
+        lattice.acquired_self[name] += lr * grad[name] / n
+    return mse + align_mse, lr
+
+
+def score_acquired_selves(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """Yes when the two names are the same individual."""
+    if not rows:
+        return 0.0, 0, [], {}
+    misses: list[str] = []
+    correct = 0
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    for row in rows:
+        remainder = lattice.acquired_self_remainder(row.left, row.right)
+        got = lattice.remainder_answer(remainder)
+        if row.holds():
+            true_abs.append(abs(remainder))
+        else:
+            false_abs.append(abs(remainder))
+        if got == row.answer():
+            correct += 1
+        elif len(misses) < 8:
+            misses.append(f"{row.prompt()} -> {got} (want {row.answer()})")
+    stats = {
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+    }
+    return correct / len(rows), correct, misses, stats
+
+
+def settle_acquired_self(lattice: Lattice, epochs: int = 500) -> list[dict]:
+    """Move the individuals apart on the offset line. Stops once the table is exact."""
+    train, hold = split_acquired_selves()
+    history: list[dict] = []
+    hits = 0.0
+    for epoch in range(epochs):
+        mse, lr = apply_acquired_self_epoch(lattice, hits)
+        train_acc, train_n, _, _ = score_acquired_selves(lattice, train)
+        hold_acc, hold_n, _, _ = score_acquired_selves(lattice, hold)
+        residual = acquired_self_residual(lattice)
+        hits = train_acc * len(train)
+        history.append(
+            {
+                "epoch": epoch,
+                "mse": mse,
+                "lr": lr,
+                "train_acc": train_acc,
+                "hold_acc": hold_acc,
+                "train_correct": train_n,
+                "hold_correct": hold_n,
+                "gauge_residual": residual,
+            }
+        )
+        if residual < 1e-4 and train_acc >= 1.0 and hold_acc >= 1.0:
+            break
+    return history
+
+
+def play_acquired(lattice: Lattice) -> dict[str, float | list[str] | bool]:
+    """Wolf then pine, on the clocks. The carrier holds the kind, not the noun.
+
+    A question does not move the clocks. The caller keeps whatever they write.
+    """
+    answers: list[str] = []
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    misses: list[str] = []
+
+    def clocks() -> tuple[float, float, float, float, float, float]:
+        return (
+            lattice.working,
+            lattice.counted,
+            lattice.earlier,
+            lattice.earlier_count,
+            lattice.earliest,
+            lattice.earliest_count,
+        )
+
+    def ask(stated: str, holds: bool, label: str, kept_read: bool) -> None:
+        kept = clocks()
+        remainder = (
+            lattice.it_kept_remainder(stated)
+            if kept_read
+            else lattice.it_remainder(stated)
+        )
+        got = lattice.remainder_answer(remainder)
+        want = "yes" if holds else "no"
+        answers.append(got)
+        if holds:
+            true_abs.append(abs(remainder))
+        else:
+            false_abs.append(abs(remainder))
+        if got != want and len(misses) < 8:
+            misses.append(f"{label} -> {got} (want {want})")
+        if clocks() != kept and len(misses) < 8:
+            misses.append(f"{label} moved the carrier")
+
+    lattice.clear_working()
+    ask("animal", False, "empty is it an animal", False)
+    lattice.deposit_acquired("wolf")
+    ask("animal", True, "is it an animal", False)
+    ask("cat", False, "is it a cat", False)
+    ask("plant", False, "is it a plant", False)
+    lattice.deposit_acquired("pine")
+    ask("plant", True, "is it a plant", False)
+    ask("animal", False, "latest is it an animal", False)
+    ask("animal", True, "kept is it an animal", True)
+    return {
+        "ok": not misses,
+        "answers": answers,
+        "misses": misses,
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": max(
+            abs(lattice.working - lattice.content_value["plant"]),
+            abs(lattice.earlier - lattice.content_value["animal"]),
+        ),
+    }
+
+
 def score_content(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
     """Yes/no from the difference of two content gauges."""
     if not rows:
@@ -1896,7 +2471,14 @@ def play_follow(lattice: Lattice, first: str, second: str) -> dict[str, float | 
     misses: list[str] = []
 
     def ask(stated: str, holds: bool, label: str) -> None:
-        kept = lattice.working
+        kept = (
+            lattice.working,
+            lattice.counted,
+            lattice.earlier,
+            lattice.earlier_count,
+            lattice.earliest,
+            lattice.earliest_count,
+        )
         remainder = lattice.it_remainder(stated)
         got = lattice.remainder_answer(remainder)
         want = "yes" if holds else "no"
@@ -1907,7 +2489,14 @@ def play_follow(lattice: Lattice, first: str, second: str) -> dict[str, float | 
             false_abs.append(abs(remainder))
         if got != want and len(misses) < 8:
             misses.append(f"{label} -> {got} (want {want})")
-        if lattice.working != kept and len(misses) < 8:
+        if (
+            lattice.working,
+            lattice.counted,
+            lattice.earlier,
+            lattice.earlier_count,
+            lattice.earliest,
+            lattice.earliest_count,
+        ) != kept and len(misses) < 8:
             misses.append(f"{label} moved the carrier")
 
     lattice.clear_working()
@@ -1938,6 +2527,10 @@ def score_follows(lattice: Lattice, rows: list) -> tuple[float, int, list[str], 
         return 0.0, 0, [], {}
     saved = lattice.working
     saved_count = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
     misses: list[str] = []
     correct = 0
     true_abs: list[float] = []
@@ -1957,6 +2550,10 @@ def score_follows(lattice: Lattice, rows: list) -> tuple[float, int, list[str], 
     finally:
         lattice.working = saved
         lattice.counted = saved_count
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
     stats = {
         "true_max_abs": max(true_abs) if true_abs else 0.0,
         "false_min_abs": min(false_abs) if false_abs else 0.0,
@@ -1983,8 +2580,14 @@ def play_count(lattice: Lattice, count: str, subject: str) -> dict[str, float | 
     misses: list[str] = []
 
     def ask(which: str, stated: str, holds: bool, label: str) -> None:
-        kept_kind = lattice.working
-        kept_count = lattice.counted
+        kept = (
+            lattice.working,
+            lattice.counted,
+            lattice.earlier,
+            lattice.earlier_count,
+            lattice.earliest,
+            lattice.earliest_count,
+        )
         if which == "count":
             remainder = lattice.it_count_remainder(stated)
         else:
@@ -1998,7 +2601,14 @@ def play_count(lattice: Lattice, count: str, subject: str) -> dict[str, float | 
             false_abs.append(abs(remainder))
         if got != want and len(misses) < 8:
             misses.append(f"{label} -> {got} (want {want})")
-        if (lattice.working != kept_kind or lattice.counted != kept_count) and len(misses) < 8:
+        if (
+            lattice.working,
+            lattice.counted,
+            lattice.earlier,
+            lattice.earlier_count,
+            lattice.earliest,
+            lattice.earliest_count,
+        ) != kept and len(misses) < 8:
             misses.append(f"{label} moved the carrier")
 
     lattice.clear_working()
@@ -2040,6 +2650,10 @@ def score_counts(lattice: Lattice, rows: list) -> tuple[float, int, list[str], d
         return 0.0, 0, [], {}
     saved = lattice.working
     saved_count = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
     misses: list[str] = []
     correct = 0
     true_abs: list[float] = []
@@ -2059,6 +2673,584 @@ def score_counts(lattice: Lattice, rows: list) -> tuple[float, int, list[str], d
     finally:
         lattice.working = saved
         lattice.counted = saved_count
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+    stats = {
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": max(carry) if carry else 0.0,
+    }
+    return correct / len(rows), correct, misses, stats
+
+
+def _count_beside(kind: str) -> str:
+    """A content word of this kind that is not the head, or cat when the head stands alone."""
+    for word in CONTENT_WORDS:
+        if word != kind and content_kind(word) == kind:
+            return word
+    return "cat"
+
+
+def play_acquired_count(lattice: Lattice, count: str, noun: str) -> dict[str, float | list[str] | bool]:
+    """Empty clocks, one counted taught noun, then the next count on the next noun.
+
+    The count clock holds the number word. The kind clock holds the kind
+    that noun steps to. A question does not replace either clock.
+    """
+    row = AcquiredCount(count, noun)
+    kind = acquired_kind(noun)
+    other_count = row.next_count()
+    other_noun = row.next_noun()
+    other_kind = acquired_kind(other_noun)
+    opposed = OPPOSED_KIND[kind]
+    member = _count_beside(kind)
+    answers: list[str] = []
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    misses: list[str] = []
+
+    def ask(which: str, stated: str, holds: bool, label: str) -> None:
+        kept = (
+            lattice.working,
+            lattice.counted,
+            lattice.earlier,
+            lattice.earlier_count,
+            lattice.earliest,
+            lattice.earliest_count,
+        )
+        if which == "count":
+            remainder = lattice.it_count_remainder(stated)
+        else:
+            remainder = lattice.it_remainder(stated)
+        got = lattice.remainder_answer(remainder)
+        want = "yes" if holds else "no"
+        answers.append(got)
+        if holds:
+            true_abs.append(abs(remainder))
+        else:
+            false_abs.append(abs(remainder))
+        if got != want and len(misses) < 8:
+            misses.append(f"{label} -> {got} (want {want})")
+        if (
+            lattice.working,
+            lattice.counted,
+            lattice.earlier,
+            lattice.earlier_count,
+            lattice.earliest,
+            lattice.earliest_count,
+        ) != kept and len(misses) < 8:
+            misses.append(f"{label} moved the carrier")
+
+    lattice.clear_working()
+    ask("count", count, False, f"empty is it {count}")
+    ask("kind", kind, False, f"empty is it {kind}")
+    lattice.deposit_acquired_count(count, noun)
+    carry = max(
+        abs(lattice.counted - lattice.word_value[count]),
+        abs(lattice.working - lattice.content_value[kind]),
+    )
+    ask("count", count, True, f"is it {count}")
+    ask("kind", kind, True, f"is it {kind}")
+    ask("kind", member, False, f"is it {member}")
+    ask("count", other_count, False, f"is it {other_count}")
+    ask("kind", opposed, False, f"is it {opposed}")
+    lattice.deposit_acquired_count(other_count, other_noun)
+    carry = max(
+        carry,
+        abs(lattice.counted - lattice.word_value[other_count]),
+        abs(lattice.working - lattice.content_value[other_kind]),
+    )
+    ask("count", other_count, True, f"is it {other_count}")
+    ask("kind", other_kind, True, f"is it {other_kind}")
+    ask("count", count, False, f"again is it {count}")
+    ask("kind", kind, kind == other_kind, f"again is it {kind}")
+    return {
+        "ok": not misses,
+        "answers": answers,
+        "misses": misses,
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": carry,
+    }
+
+
+def score_acquired_counts(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """Each taught noun is its own counted sentence. Both clocks return."""
+    if not rows:
+        return 0.0, 0, [], {}
+    saved = lattice.working
+    saved_count = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    misses: list[str] = []
+    correct = 0
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    carry: list[float] = []
+    try:
+        for row in rows:
+            played = play_acquired_count(lattice, row.count, row.noun)
+            true_abs.append(float(played["true_max_abs"]))
+            false_abs.append(float(played["false_min_abs"]))
+            carry.append(float(played["carry_max"]))
+            if played["ok"]:
+                correct += 1
+            elif len(misses) < 8:
+                detail = played["misses"][0] if played["misses"] else "miss"
+                misses.append(f"{row.opening()} {detail}")
+    finally:
+        lattice.working = saved
+        lattice.counted = saved_count
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+    stats = {
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": max(carry) if carry else 0.0,
+    }
+    return correct / len(rows), correct, misses, stats
+
+
+def play_paragraph(lattice: Lattice, first: str, second: str) -> dict[str, float | list[str] | bool]:
+    """Two kind sentences. The second keeps the first kind instead of dropping it.
+
+    "is it" still reads only the latest clock. This read sees both.
+    A question does not move the clocks. The caller keeps whatever they write.
+    """
+    row = FollowUp(first, second)
+    kind = content_kind(first)
+    other = content_kind(second)
+    outside = row.other_kind()
+    answers: list[str] = []
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    misses: list[str] = []
+
+    def clocks() -> tuple[float, float, float, float, float, float]:
+        return (
+            lattice.working,
+            lattice.counted,
+            lattice.earlier,
+            lattice.earlier_count,
+            lattice.earliest,
+            lattice.earliest_count,
+        )
+
+    def ask(stated: str, holds: bool, label: str) -> None:
+        kept = clocks()
+        remainder = lattice.it_kept_remainder(stated)
+        got = lattice.remainder_answer(remainder)
+        want = "yes" if holds else "no"
+        answers.append(got)
+        if holds:
+            true_abs.append(abs(remainder))
+        else:
+            false_abs.append(abs(remainder))
+        if got != want and len(misses) < 8:
+            misses.append(f"{label} -> {got} (want {want})")
+        if clocks() != kept and len(misses) < 8:
+            misses.append(f"{label} moved the carrier")
+
+    lattice.clear_working()
+    ask(kind, False, f"empty is it {kind}")
+    lattice.deposit_kind(first)
+    ask(kind, True, f"is it {kind}")
+    ask(other, kind == other, f"early is it {other}")
+    lattice.deposit_kind(second)
+    carry = max(
+        abs(lattice.working - lattice.content_value[other]),
+        abs(lattice.earlier - lattice.content_value[kind]),
+    )
+    ask(other, True, f"is it {other}")
+    ask(kind, True, f"kept is it {kind}")
+    ask(outside, False, f"is it {outside}")
+    return {
+        "ok": not misses,
+        "answers": answers,
+        "misses": misses,
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": carry,
+    }
+
+
+def score_paragraphs(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """Each pair is its own paragraph. The clocks return to where they started."""
+    if not rows:
+        return 0.0, 0, [], {}
+    saved = lattice.working
+    saved_count = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    misses: list[str] = []
+    correct = 0
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    carry: list[float] = []
+    try:
+        for row in rows:
+            played = play_paragraph(lattice, row.first, row.second)
+            true_abs.append(float(played["true_max_abs"]))
+            false_abs.append(float(played["false_min_abs"]))
+            carry.append(float(played["carry_max"]))
+            if played["ok"]:
+                correct += 1
+            elif len(misses) < 8:
+                detail = played["misses"][0] if played["misses"] else "miss"
+                misses.append(f"{row.text()} {detail}")
+    finally:
+        lattice.working = saved
+        lattice.counted = saved_count
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+    stats = {
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": max(carry) if carry else 0.0,
+    }
+    return correct / len(rows), correct, misses, stats
+
+
+def play_acquired_paragraph(lattice: Lattice, first: str, second: str) -> dict[str, float | list[str] | bool]:
+    """Two taught nouns. The second sentence keeps the kind the first left.
+
+    "is it" still reads only the latest clock. This read sees both.
+    A question does not move the clocks. The noun gauges stay put.
+    """
+    row = AcquiredParagraph(first, second)
+    kind = acquired_kind(first)
+    other = acquired_kind(second)
+    outside = row.other_kind()
+    answers: list[str] = []
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    misses: list[str] = []
+
+    def clocks() -> tuple[float, float, float, float, float, float]:
+        return (
+            lattice.working,
+            lattice.counted,
+            lattice.earlier,
+            lattice.earlier_count,
+            lattice.earliest,
+            lattice.earliest_count,
+        )
+
+    def ask(stated: str, holds: bool, label: str) -> None:
+        kept = clocks()
+        remainder = lattice.it_kept_remainder(stated)
+        got = lattice.remainder_answer(remainder)
+        want = "yes" if holds else "no"
+        answers.append(got)
+        if holds:
+            true_abs.append(abs(remainder))
+        else:
+            false_abs.append(abs(remainder))
+        if got != want and len(misses) < 8:
+            misses.append(f"{label} -> {got} (want {want})")
+        if clocks() != kept and len(misses) < 8:
+            misses.append(f"{label} moved the carrier")
+
+    lattice.clear_working()
+    ask(kind, False, f"empty is it {kind}")
+    lattice.deposit_acquired(first)
+    ask(kind, True, f"is it {kind}")
+    ask(other, kind == other, f"early is it {other}")
+    lattice.deposit_acquired(second)
+    carry = max(
+        abs(lattice.working - lattice.content_value[other]),
+        abs(lattice.earlier - lattice.content_value[kind]),
+    )
+    ask(other, True, f"is it {other}")
+    ask(kind, True, f"kept is it {kind}")
+    ask(outside, False, f"is it {outside}")
+    return {
+        "ok": not misses,
+        "answers": answers,
+        "misses": misses,
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": carry,
+    }
+
+
+def score_acquired_paragraphs(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """Each pair of taught nouns is its own paragraph. The clocks return."""
+    if not rows:
+        return 0.0, 0, [], {}
+    saved = lattice.working
+    saved_count = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    misses: list[str] = []
+    correct = 0
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    carry: list[float] = []
+    try:
+        for row in rows:
+            played = play_acquired_paragraph(lattice, row.first, row.second)
+            true_abs.append(float(played["true_max_abs"]))
+            false_abs.append(float(played["false_min_abs"]))
+            carry.append(float(played["carry_max"]))
+            if played["ok"]:
+                correct += 1
+            elif len(misses) < 8:
+                detail = played["misses"][0] if played["misses"] else "miss"
+                misses.append(f"{row.text()} {detail}")
+    finally:
+        lattice.working = saved
+        lattice.counted = saved_count
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+    stats = {
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": max(carry) if carry else 0.0,
+    }
+    return correct / len(rows), correct, misses, stats
+
+
+def play_acquired_fact(lattice: Lattice, first: str, second: str, third: str) -> dict[str, float | list[str] | bool]:
+    """Three taught nouns. The first kind survives both later sentences.
+
+    "is it" still reads only the latest clock. This read sees all three.
+    A question does not move the clocks. The noun gauges stay put.
+    """
+    row = AcquiredFact(first, second, third)
+    kind = acquired_kind(first)
+    middle = acquired_kind(second)
+    last = acquired_kind(third)
+    outside = row.outside_kind()
+    answers: list[str] = []
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    misses: list[str] = []
+
+    def clocks() -> tuple[float, float, float, float, float, float]:
+        return (
+            lattice.working,
+            lattice.counted,
+            lattice.earlier,
+            lattice.earlier_count,
+            lattice.earliest,
+            lattice.earliest_count,
+        )
+
+    def ask(stated: str, holds: bool, label: str) -> None:
+        kept = clocks()
+        remainder = lattice.it_surviving_remainder(stated)
+        got = lattice.remainder_answer(remainder)
+        want = "yes" if holds else "no"
+        answers.append(got)
+        if holds:
+            true_abs.append(abs(remainder))
+        else:
+            false_abs.append(abs(remainder))
+        if got != want and len(misses) < 8:
+            misses.append(f"{label} -> {got} (want {want})")
+        if clocks() != kept and len(misses) < 8:
+            misses.append(f"{label} moved the carrier")
+
+    lattice.clear_working()
+    ask(kind, False, f"empty is it {kind}")
+    lattice.deposit_acquired(first)
+    ask(kind, True, f"is it {kind}")
+    ask(middle, kind == middle, f"early is it {middle}")
+    lattice.deposit_acquired(second)
+    ask(middle, True, f"is it {middle}")
+    ask(kind, True, f"kept is it {kind}")
+    ask(last, last == kind or last == middle, f"early is it {last}")
+    lattice.deposit_acquired(third)
+    carry = max(
+        abs(lattice.working - lattice.content_value[last]),
+        abs(lattice.earlier - lattice.content_value[middle]),
+        abs(lattice.earliest - lattice.content_value[kind]),
+    )
+    ask(last, True, f"is it {last}")
+    ask(middle, True, f"kept is it {middle}")
+    ask(kind, True, f"surviving is it {kind}")
+    ask(outside, False, f"is it {outside}")
+    return {
+        "ok": not misses,
+        "answers": answers,
+        "misses": misses,
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": carry,
+    }
+
+
+def score_acquired_facts(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """Each triple of taught nouns is its own fact. The clocks return."""
+    if not rows:
+        return 0.0, 0, [], {}
+    saved = lattice.working
+    saved_count = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    misses: list[str] = []
+    correct = 0
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    carry: list[float] = []
+    try:
+        for row in rows:
+            played = play_acquired_fact(lattice, row.first, row.second, row.third)
+            true_abs.append(float(played["true_max_abs"]))
+            false_abs.append(float(played["false_min_abs"]))
+            carry.append(float(played["carry_max"]))
+            if played["ok"]:
+                correct += 1
+            elif len(misses) < 8:
+                detail = played["misses"][0] if played["misses"] else "miss"
+                misses.append(f"{row.text()} {detail}")
+    finally:
+        lattice.working = saved
+        lattice.counted = saved_count
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+    stats = {
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": max(carry) if carry else 0.0,
+    }
+    return correct / len(rows), correct, misses, stats
+
+
+def play_kept_count(lattice: Lattice, count: str, subject: str, second: str) -> dict[str, float | list[str] | bool]:
+    """A counted sentence, then a kind sentence. The count stays on the earlier clock.
+
+    "is it two" still reads only the latest count. This read sees both count
+    clocks, and the kind read sees both kind clocks. A question does not
+    move the clocks. The caller keeps whatever they write.
+    """
+    counted = Counted(count, subject)
+    kind = content_kind(subject)
+    other = content_kind(second)
+    outside = next(head for head in KIND_HEADS if head != kind and head != other)
+    other_count = counted.next_count()
+    answers: list[str] = []
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    misses: list[str] = []
+
+    def clocks() -> tuple[float, float, float, float, float, float]:
+        return (
+            lattice.working,
+            lattice.counted,
+            lattice.earlier,
+            lattice.earlier_count,
+            lattice.earliest,
+            lattice.earliest_count,
+        )
+
+    def ask(which: str, stated: str, holds: bool, label: str, kept_read: bool) -> None:
+        kept = clocks()
+        if which == "count":
+            remainder = (
+                lattice.it_kept_count_remainder(stated)
+                if kept_read
+                else lattice.it_count_remainder(stated)
+            )
+        else:
+            remainder = (
+                lattice.it_kept_remainder(stated)
+                if kept_read
+                else lattice.it_remainder(stated)
+            )
+        got = lattice.remainder_answer(remainder)
+        want = "yes" if holds else "no"
+        answers.append(got)
+        if holds:
+            true_abs.append(abs(remainder))
+        else:
+            false_abs.append(abs(remainder))
+        if got != want and len(misses) < 8:
+            misses.append(f"{label} -> {got} (want {want})")
+        if clocks() != kept and len(misses) < 8:
+            misses.append(f"{label} moved the carrier")
+
+    lattice.clear_working()
+    ask("count", count, False, f"empty is it {count}", False)
+    ask("kind", kind, False, f"empty is it {kind}", False)
+    lattice.deposit_count(count, subject)
+    ask("count", count, True, f"is it {count}", False)
+    ask("kind", kind, True, f"is it {kind}", False)
+    ask("kind", subject, subject == kind, f"is it {subject}", False)
+    lattice.deposit_kind(second)
+    carry = max(
+        abs(lattice.working - lattice.content_value[other]),
+        abs(lattice.earlier - lattice.content_value[kind]),
+        abs(lattice.earlier_count - lattice.word_value[count]),
+    )
+    ask("count", count, False, f"latest is it {count}", False)
+    ask("count", count, True, f"kept is it {count}", True)
+    ask("count", other_count, False, f"kept is it {other_count}", True)
+    ask("kind", kind, True, f"kept is it {kind}", True)
+    ask("kind", other, True, f"kept is it {other}", True)
+    ask("kind", outside, False, f"kept is it {outside}", True)
+    return {
+        "ok": not misses,
+        "answers": answers,
+        "misses": misses,
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": carry,
+    }
+
+
+def score_kept_counts(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """Each row is its own paragraph. The clocks return to where they started."""
+    if not rows:
+        return 0.0, 0, [], {}
+    saved = lattice.working
+    saved_count = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    misses: list[str] = []
+    correct = 0
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    carry: list[float] = []
+    try:
+        for row in rows:
+            played = play_kept_count(lattice, row.count, row.subject, row.second)
+            true_abs.append(float(played["true_max_abs"]))
+            false_abs.append(float(played["false_min_abs"]))
+            carry.append(float(played["carry_max"]))
+            if played["ok"]:
+                correct += 1
+            elif len(misses) < 8:
+                detail = played["misses"][0] if played["misses"] else "miss"
+                misses.append(f"{row.text()} {detail}")
+    finally:
+        lattice.working = saved
+        lattice.counted = saved_count
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
     stats = {
         "true_max_abs": max(true_abs) if true_abs else 0.0,
         "false_min_abs": min(false_abs) if false_abs else 0.0,
