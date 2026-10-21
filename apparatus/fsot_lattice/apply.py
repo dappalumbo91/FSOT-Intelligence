@@ -20,7 +20,8 @@ A taught noun uses that same counted sentence. The number stays the
 number word, and the kind is the head that noun steps to.
 Two taught nouns make a paragraph. The second sentence keeps the
 kind the first one left. Three taught nouns make a fact. The first
-kind survives both later sentences.
+kind survives both later sentences. Four taught nouns make an open
+paragraph. The opening kind survives the three sentences after it.
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ from fsot_lattice.lattice import (
     play_acquired,
     play_acquired_count,
     play_acquired_fact,
+    play_acquired_open,
     play_acquired_paragraph,
     play_kept_count,
     play_paragraph,
@@ -47,6 +49,7 @@ from fsot_lattice.lattice import (
     score_acquired_counts,
     score_acquired_pairs,
     score_acquired_facts,
+    score_acquired_opens,
     score_acquired_paragraphs,
     score_acquired_selves,
     score_content,
@@ -69,6 +72,7 @@ from fsot_lattice.tasks import (
     ACQUIRED_NOUNS,
     AcquiredCount,
     AcquiredFact,
+    AcquiredOpen,
     AcquiredParagraph,
     AcquiredSelf,
     AcquiredRevision,
@@ -95,6 +99,7 @@ from fsot_lattice.tasks import (
     all_acquired_counts,
     all_acquired_pairs,
     all_acquired_facts,
+    all_acquired_opens,
     all_acquired_paragraphs,
     all_acquired_selves,
     all_revision_pairs,
@@ -116,6 +121,7 @@ from fsot_lattice.tasks import (
     split_acquired_counts,
     split_acquired_pairs,
     split_acquired_facts,
+    split_acquired_opens,
     split_acquired_paragraphs,
     split_acquired_selves,
     split_revision_pairs,
@@ -265,6 +271,7 @@ def check_generated(lattice: Lattice) -> None:
     _check_acquired_counts(lattice)
     _check_acquired_paragraphs(lattice)
     _check_acquired_facts(lattice)
+    _check_acquired_opens(lattice)
 
 
 def _check_lexicon(lattice: Lattice) -> None:
@@ -4850,6 +4857,8 @@ def _check_follows(lattice: Lattice) -> None:
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     try:
         for place, name in enumerate(CONTENT_WORDS):
             lattice.content_value[name] = K * (place + 1)
@@ -4879,6 +4888,8 @@ def _check_follows(lattice: Lattice) -> None:
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
 
 
 def _score_follows(lattice: Lattice) -> dict:
@@ -4953,6 +4964,8 @@ def _check_counts(lattice: Lattice) -> None:
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     try:
         for place, name in enumerate(CONTENT_WORDS):
             lattice.content_value[name] = K * (place + 1)
@@ -4993,6 +5006,8 @@ def _check_counts(lattice: Lattice) -> None:
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
 
 
 def _check_paragraphs(lattice: Lattice) -> None:
@@ -5013,6 +5028,8 @@ def _check_paragraphs(lattice: Lattice) -> None:
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     try:
         for place, name in enumerate(CONTENT_WORDS):
             lattice.content_value[name] = K * (place + 1)
@@ -5047,6 +5064,8 @@ def _check_paragraphs(lattice: Lattice) -> None:
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
 
 
 def _check_kept_counts(lattice: Lattice) -> None:
@@ -5089,6 +5108,8 @@ def _check_kept_counts(lattice: Lattice) -> None:
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     try:
         for place, name in enumerate(CONTENT_WORDS):
             lattice.content_value[name] = K * (place + 1)
@@ -5135,6 +5156,8 @@ def _check_kept_counts(lattice: Lattice) -> None:
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
 
 
 def _check_acquired(lattice: Lattice) -> None:
@@ -5184,6 +5207,8 @@ def _check_acquired(lattice: Lattice) -> None:
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     try:
         for place, name in enumerate(CONTENT_WORDS):
             lattice.content_value[name] = K * (place + 1)
@@ -5262,6 +5287,8 @@ def _check_acquired(lattice: Lattice) -> None:
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
 
 
 def _check_acquired_self(lattice: Lattice) -> None:
@@ -5298,6 +5325,8 @@ def _check_acquired_self(lattice: Lattice) -> None:
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     try:
         for name in ACQUIRED_NOUNS:
             lattice.acquired_self[name] = K
@@ -5352,6 +5381,8 @@ def _check_acquired_self(lattice: Lattice) -> None:
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
 
 
 def _check_revision(lattice: Lattice) -> None:
@@ -5400,6 +5431,8 @@ def _check_revision(lattice: Lattice) -> None:
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     try:
         for place, name in enumerate(CONTENT_WORDS):
             lattice.content_value[name] = K * (place + 1)
@@ -5480,6 +5513,8 @@ def _check_revision(lattice: Lattice) -> None:
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
 
 
 def _score_paragraphs(lattice: Lattice) -> dict:
@@ -5634,6 +5669,8 @@ def _check_acquired_counts(lattice: Lattice) -> None:
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     try:
         for place, name in enumerate(CONTENT_WORDS):
             lattice.content_value[name] = K * (place + 1)
@@ -5696,6 +5733,8 @@ def _check_acquired_counts(lattice: Lattice) -> None:
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
 
 
 def _check_acquired_paragraphs(lattice: Lattice) -> None:
@@ -5738,6 +5777,8 @@ def _check_acquired_paragraphs(lattice: Lattice) -> None:
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     try:
         for place, name in enumerate(CONTENT_WORDS):
             lattice.content_value[name] = K * (place + 1)
@@ -5790,6 +5831,8 @@ def _check_acquired_paragraphs(lattice: Lattice) -> None:
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
 
 
 def _check_acquired_facts(lattice: Lattice) -> None:
@@ -5838,6 +5881,8 @@ def _check_acquired_facts(lattice: Lattice) -> None:
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     try:
         for place, name in enumerate(CONTENT_WORDS):
             lattice.content_value[name] = K * (place + 1)
@@ -5911,6 +5956,150 @@ def _check_acquired_facts(lattice: Lattice) -> None:
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
+
+
+def _check_acquired_opens(lattice: Lattice) -> None:
+    """Four taught nouns. The opening kind survives the three sentences after it.
+
+    "is it" still reads only the latest clock. Three sentences leave the
+    opening clock empty, so the fact read stays the three-clock read.
+    Fresh gauges tie, so this writes the offset line, settles the noun
+    gauges, and restores them.
+    """
+    rows = all_acquired_opens()
+    train, hold = split_acquired_opens()
+    if len(rows) != len(ACQUIRED_NOUNS) ** 4:
+        raise RuntimeError("the open paragraph left the ordered fours")
+    if set(train) | set(hold) != set(rows) or set(train) & set(hold):
+        raise RuntimeError("the open paragraph split is not a partition")
+    if len(hold) * 5 != len(rows) or not train:
+        raise RuntimeError("the open paragraph split left the fifth")
+    for slot in ("first", "second", "third", "fourth"):
+        if {getattr(row, slot) for row in train} != set(ACQUIRED_NOUNS):
+            raise RuntimeError(f"the open paragraph train split missed a {slot} noun")
+    if not any(row.first_alone() for row in train) or not any(row.first_alone() for row in hold):
+        raise RuntimeError("the open paragraph split hid the opening kind on one side")
+    if not any(row.one_kind() for row in train) or not any(row.one_kind() for row in hold):
+        raise RuntimeError("the open paragraph split hid a repeated kind on one side")
+    if not any(len(set(row.kinds())) == 4 for row in train) or not any(len(set(row.kinds())) == 4 for row in hold):
+        raise RuntimeError("the open paragraph split hid four kinds on one side")
+    if not any(row.outside_kind() is not None for row in train) or not any(row.outside_kind() is not None for row in hold):
+        raise RuntimeError("the open paragraph split hid an outside head on one side")
+    sample = AcquiredOpen("wolf", "pine", "clay", "mist")
+    if sample.text() != "a wolf is an animal. a pine is a plant. a clay is a rock. a mist is a water":
+        raise RuntimeError("wolf then pine then clay then mist left the paragraph")
+    if sample.outside_kind() is not None:
+        raise RuntimeError("wolf then pine then clay then mist left a head unnamed")
+    if AcquiredOpen("wolf", "pine", "clay", "pine").outside_kind() != "water":
+        raise RuntimeError("wolf then pine then clay then pine left water unnamed")
+    if AcquiredOpen("wolf", "cow", "hare", "wolf").text() != (
+        "a wolf is an animal. a cow is an animal. a hare is an animal. a wolf is an animal"
+    ):
+        raise RuntimeError("wolf then cow then hare then wolf left the paragraph")
+    saved_content = dict(lattice.content_value)
+    saved_words = dict(lattice.word_value)
+    saved_digits = dict(lattice.digit_value)
+    saved_acquired = dict(lattice.acquired_value)
+    saved_self = dict(lattice.acquired_self)
+    saved_working = lattice.working
+    saved_counted = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
+    try:
+        for place, name in enumerate(CONTENT_WORDS):
+            lattice.content_value[name] = K * (place + 1)
+        for name in ACQUIRED_NOUNS:
+            lattice.acquired_value[name] = K
+            lattice.acquired_self[name] = K
+        settle_acquired(lattice)
+        taught = dict(lattice.acquired_value)
+        individuals = dict(lattice.acquired_self)
+        mists = play_acquired_open(lattice, "wolf", "pine", "clay", "mist")
+        if mists["answers"] != [
+            "no", "yes", "no", "yes", "yes", "yes", "yes", "yes", "yes",
+        ]:
+            raise RuntimeError(f"wolf then pine then clay then mist read {mists['answers']}")
+        pines = play_acquired_open(lattice, "wolf", "pine", "clay", "pine")
+        if pines["answers"] != [
+            "no", "yes", "no", "yes", "yes", "yes", "yes", "yes", "yes", "no",
+        ]:
+            raise RuntimeError(f"wolf then pine then clay then pine read {pines['answers']}")
+        wolves = play_acquired_open(lattice, "wolf", "cow", "hare", "wolf")
+        if wolves["answers"] != [
+            "no", "yes", "yes", "yes", "yes", "yes", "yes", "yes", "yes", "no",
+        ]:
+            raise RuntimeError(f"wolf then cow then hare then wolf read {wolves['answers']}")
+        lattice.clear_working()
+        lattice.deposit_acquired("wolf")
+        lattice.deposit_acquired("pine")
+        lattice.deposit_acquired("clay")
+        if lattice.opening != 0.0 or lattice.opening_count != 0.0:
+            raise RuntimeError("three sentences wrote the opening clock")
+        if lattice.remainder_answer(lattice.it_surviving_remainder("animal")) != "yes":
+            raise RuntimeError("three sentences dropped the opening kind")
+        lattice.deposit_acquired("mist")
+        if lattice.predict_it("water") != "yes" or lattice.predict_it("animal") != "no":
+            raise RuntimeError("is it left the latest clock after three replacements")
+        if lattice.remainder_answer(lattice.it_surviving_remainder("animal")) != "no":
+            raise RuntimeError("the fact read kept the opening kind")
+        if lattice.remainder_answer(lattice.it_open_remainder("animal")) != "yes":
+            raise RuntimeError("the opening kind left after three replacements")
+        if lattice.remainder_answer(lattice.it_open_remainder("plant")) != "yes":
+            raise RuntimeError("plant left the open paragraph")
+        if lattice.remainder_answer(lattice.it_open_remainder("rock")) != "yes":
+            raise RuntimeError("rock left the open paragraph")
+        if lattice.remainder_answer(lattice.it_open_remainder("water")) != "yes":
+            raise RuntimeError("water left the open paragraph")
+        latest = play_acquired(lattice)
+        if latest["answers"] != ["no", "yes", "no", "no", "yes", "no", "yes"]:
+            raise RuntimeError(f"is it still reads only the latest clock {latest['answers']}")
+        kept = play_acquired_paragraph(lattice, "wolf", "pine")
+        if kept["answers"] != ["no", "yes", "no", "yes", "yes", "no"]:
+            raise RuntimeError(f"wolf then pine left its paragraph {kept['answers']}")
+        facts = play_acquired_fact(lattice, "wolf", "pine", "clay")
+        if facts["answers"] != [
+            "no", "yes", "no", "yes", "yes", "no", "yes", "yes", "yes", "no",
+        ]:
+            raise RuntimeError(f"wolf then pine then clay left its fact {facts['answers']}")
+        cats = play_paragraph(lattice, "cat", "oak")
+        if cats["answers"] != ["no", "yes", "no", "yes", "yes", "no"]:
+            raise RuntimeError(f"cat then oak left its paragraph {cats['answers']}")
+        acc, _correct, misses, stats = score_acquired_opens(lattice, rows)
+        if acc != 1.0 or misses:
+            raise RuntimeError(f"open paragraph read {misses[:3]}")
+        if stats["true_max_abs"] >= GAUGE_FLOOR or stats["carry_max"] >= GAUGE_FLOOR:
+            raise RuntimeError(
+                f"open paragraph carry {stats['true_max_abs']} / {stats['carry_max']}"
+            )
+        if stats["false_min_abs"] <= DROP:
+            raise RuntimeError(f"open paragraph false remainder {stats['false_min_abs']}")
+        if lattice.acquired_value != taught or lattice.acquired_self != individuals:
+            raise RuntimeError("an open paragraph moved a noun gauge")
+        if lattice.digit_value != saved_digits or lattice.word_value != saved_words:
+            raise RuntimeError("an open paragraph moved an arithmetic gauge")
+        for place, name in enumerate(CONTENT_WORDS):
+            if lattice.content_value[name] != K * (place + 1):
+                raise RuntimeError("an open paragraph moved a content gauge")
+    finally:
+        lattice.content_value.update(saved_content)
+        lattice.word_value.update(saved_words)
+        lattice.digit_value.update(saved_digits)
+        lattice.acquired_value.update(saved_acquired)
+        lattice.acquired_self.update(saved_self)
+        lattice.working = saved_working
+        lattice.counted = saved_counted
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
 
 
 def _score_counts(lattice: Lattice) -> dict:
@@ -6006,6 +6195,30 @@ def _score_acquired_facts(lattice: Lattice) -> dict:
         "acquired_fact_train": pack(train),
         "acquired_fact_hold": pack(hold),
         "acquired_fact_closed": pack(closed),
+    }
+
+
+def _score_acquired_opens(lattice: Lattice) -> dict:
+    """Train, hold, and the closed open-paragraph table of taught nouns."""
+    train, hold = split_acquired_opens()
+    closed = all_acquired_opens()
+
+    def pack(rows: list) -> dict:
+        acc, correct, misses, stats = score_acquired_opens(lattice, rows)
+        return {
+            "acc": acc,
+            "correct": correct,
+            "n": len(rows),
+            "misses": misses,
+            "true_max_abs": stats.get("true_max_abs", 0.0),
+            "false_min_abs": stats.get("false_min_abs", 0.0),
+            "carry_max": stats.get("carry_max", 0.0),
+        }
+
+    return {
+        "acquired_open_train": pack(train),
+        "acquired_open_hold": pack(hold),
+        "acquired_open_closed": pack(closed),
     }
 
 
@@ -6625,6 +6838,7 @@ def score_generated(lattice: Lattice) -> dict:
     report.update(_score_acquired_counts(lattice))
     report.update(_score_acquired_paragraphs(lattice))
     report.update(_score_acquired_facts(lattice))
+    report.update(_score_acquired_opens(lattice))
     report.update(_score_paragraphs(lattice))
     report.update(_score_kept_counts(lattice))
     report.update(_score_acquired(lattice))
@@ -6901,6 +7115,14 @@ def generated_ok(report: dict) -> bool:
             return False
     for split in ("train", "hold", "closed"):
         block = report[f"acquired_fact_{split}"]
+        if not _exact(block):
+            return False
+        if block["true_max_abs"] >= GAUGE_FLOOR or block["carry_max"] >= GAUGE_FLOOR:
+            return False
+        if block["false_min_abs"] <= DROP:
+            return False
+    for split in ("train", "hold", "closed"):
+        block = report[f"acquired_open_{split}"]
         if not _exact(block):
             return False
         if block["true_max_abs"] >= GAUGE_FLOOR or block["carry_max"] >= GAUGE_FLOOR:

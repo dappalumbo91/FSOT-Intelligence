@@ -94,6 +94,7 @@ def check_package(pin: str) -> list[str]:
         "acquired_count_ok",
         "acquired_paragraph_ok",
         "acquired_fact_ok",
+        "acquired_open_ok",
     ):
         if report.get(key) is not True:
             issues.append(f"{key} is not true")

@@ -21,6 +21,7 @@ a later sentence moves the kind gauge onto another head and leaves that individu
 a counted sentence names that noun and leaves the number beside its kind,
 two of those nouns make a paragraph and the second keeps the first kind,
 three of those nouns make a fact and the first kind survives both later sentences,
+four of those nouns make an open paragraph and the opening kind survives the three sentences after it,
 and the generated pass scores order, product, a third step, names past nine,
 two-digit names re-entering as operands, two places in one expression,
 sums that leave 0..99, a hundred name used as an operand whose
@@ -69,6 +70,7 @@ from fsot_lattice.lattice import (
     score_acquired_counts,
     score_acquired_pairs,
     score_acquired_facts,
+    score_acquired_opens,
     score_acquired_paragraphs,
     score_acquired_selves,
     score_content,
@@ -104,6 +106,7 @@ from fsot_lattice.tasks import (
     all_acquired_counts,
     all_acquired_pairs,
     all_acquired_facts,
+    all_acquired_opens,
     all_acquired_paragraphs,
     all_acquired_selves,
     all_revision_pairs,
@@ -123,6 +126,7 @@ from fsot_lattice.tasks import (
     split_acquired_counts,
     split_acquired_pairs,
     split_acquired_facts,
+    split_acquired_opens,
     split_acquired_paragraphs,
     split_acquired_selves,
     split_chains,
@@ -802,6 +806,17 @@ def run() -> dict:
         and acq_fact_all[3]["carry_max"] < GAUGE_FLOOR
         and acq_fact_all[3]["false_min_abs"] > eq_drop
     )
+    acq_open_train, acq_open_hold = split_acquired_opens()
+    acq_open_train_score = score_acquired_opens(lattice, acq_open_train)
+    acq_open_hold_score = score_acquired_opens(lattice, acq_open_hold)
+    acq_open_all = score_acquired_opens(lattice, all_acquired_opens())
+    acquired_open_ok = (
+        acq_open_train_score[0] >= EXACT_FLOOR
+        and acq_open_hold_score[0] >= EXACT_FLOOR
+        and acq_open_all[3]["true_max_abs"] < GAUGE_FLOOR
+        and acq_open_all[3]["carry_max"] < GAUGE_FLOOR
+        and acq_open_all[3]["false_min_abs"] > eq_drop
+    )
     para_train_score = score_paragraphs(lattice, follow_train)
     para_hold_score = score_paragraphs(lattice, follow_hold)
     para_all = score_paragraphs(lattice, all_follows())
@@ -880,6 +895,7 @@ def run() -> dict:
         and acquired_count_ok
         and acquired_paragraph_ok
         and acquired_fact_ok
+        and acquired_open_ok
         and paragraph_ok
         and kept_count_ok
         and acquired_ok
@@ -965,6 +981,12 @@ def run() -> dict:
         "acquired_fact_false_min": acq_fact_all[3]["false_min_abs"],
         "acquired_fact_carry_max": acq_fact_all[3]["carry_max"],
         "acquired_fact_ok": acquired_fact_ok,
+        "acquired_open_train": acq_open_train_score[0],
+        "acquired_open_hold": acq_open_hold_score[0],
+        "acquired_open_true_max": acq_open_all[3]["true_max_abs"],
+        "acquired_open_false_min": acq_open_all[3]["false_min_abs"],
+        "acquired_open_carry_max": acq_open_all[3]["carry_max"],
+        "acquired_open_ok": acquired_open_ok,
         "paragraph_train": para_train_score[0],
         "paragraph_hold": para_hold_score[0],
         "paragraph_true_max": para_all[3]["true_max_abs"],
@@ -1133,6 +1155,7 @@ def run() -> dict:
         f"acqcount {acq_count_hold_score[0]:.3f}/{acq_count_all[3]['carry_max']:.3e}  "
         f"acqpara {acq_para_hold_score[0]:.3f}/{acq_para_all[3]['carry_max']:.3e}  "
         f"acqfact {acq_fact_hold_score[0]:.3f}/{acq_fact_all[3]['carry_max']:.3e}  "
+        f"acqopen {acq_open_hold_score[0]:.3f}/{acq_open_all[3]['carry_max']:.3e}  "
         f"paragraph {para_hold_score[0]:.3f}/{para_all[3]['carry_max']:.3e}  "
         f"kept {kept_hold_score[0]:.3f}/{kept_all[3]['carry_max']:.3e}  "
         f"acq {acq_hold_score[0]:.3f}/{acquired_residual(lattice):.3e}  "

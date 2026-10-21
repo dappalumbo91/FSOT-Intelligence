@@ -70,6 +70,7 @@ from fsot_lattice.tasks import (
     WORD_OF,
     AcquiredCount,
     AcquiredFact,
+    AcquiredOpen,
     AcquiredParagraph,
     Counted,
     FollowUp,
@@ -174,19 +175,22 @@ class Lattice:
     frozen_digits: dict[str, float] | None = None
     width: int = WIDTH
     # The circulating clocks. Zero is empty. A named sentence writes its kind
-    # gauge on `working`, moves the previous kind to `earlier`, and moves the
-    # kind before that to `earliest`. A counted sentence also writes the
-    # number-word gauge on `counted` and shifts the count clocks the same way.
-    # A question reads the clocks and leaves them. "is it" reads the latest
-    # clock. A paragraph read also sees `earlier`. A fact read also sees
-    # `earliest`. A kept count also sees `earlier_count`. The latest count
-    # read stays on `counted`.
+    # gauge on `working`, moves the previous kind to `earlier`, moves the
+    # kind before that to `earliest`, and moves the kind before that to
+    # `opening`. A counted sentence also writes the number-word gauge on
+    # `counted` and shifts the count clocks the same way. A question reads
+    # the clocks and leaves them. "is it" reads the latest clock. A paragraph
+    # read also sees `earlier`. A fact read also sees `earliest`. An open
+    # paragraph also sees `opening`. A kept count also sees `earlier_count`.
+    # The latest count read stays on `counted`.
     working: float = 0.0
     counted: float = 0.0
     earlier: float = 0.0
     earlier_count: float = 0.0
     earliest: float = 0.0
     earliest_count: float = 0.0
+    opening: float = 0.0
+    opening_count: float = 0.0
 
     @classmethod
     def fresh(cls) -> "Lattice":
@@ -224,6 +228,8 @@ class Lattice:
             earlier_count=0.0,
             earliest=0.0,
             earliest_count=0.0,
+            opening=0.0,
+            opening_count=0.0,
         )
 
     def symbol_vector(self, symbol: str, surface: str) -> list[float]:
@@ -462,9 +468,13 @@ class Lattice:
         self.earlier_count = 0.0
         self.earliest = 0.0
         self.earliest_count = 0.0
+        self.opening = 0.0
+        self.opening_count = 0.0
 
     def _keep_previous(self) -> None:
-        """The sentence about to be written becomes the latest. The older two stay."""
+        """The sentence about to be written becomes the latest. The older three stay."""
+        self.opening = self.earliest
+        self.opening_count = self.earliest_count
         self.earliest = self.earlier
         self.earliest_count = self.earlier_count
         self.earlier = self.working
@@ -534,6 +544,18 @@ class Lattice:
         best = self.it_kept_remainder(stated)
         older = self.consensus_quantity(
             self.earliest,
+            self.content_value[stated],
+            self.routed_sign("-"),
+        )
+        if abs(older) < abs(best):
+            return older
+        return best
+
+    def it_open_remainder(self, stated: str) -> float:
+        """The closer of the fact read and the kind kept from the opening sentence."""
+        best = self.it_surviving_remainder(stated)
+        older = self.consensus_quantity(
+            self.opening,
             self.content_value[stated],
             self.routed_sign("-"),
         )
@@ -1870,6 +1892,8 @@ def acquired_idle_drift(lattice: Lattice) -> float:
         lattice.earlier_count,
         lattice.earliest,
         lattice.earliest_count,
+        lattice.opening,
+        lattice.opening_count,
     )
     handle = tempfile.NamedTemporaryFile(
         prefix="fsot-acquired-idle-", suffix=".json", delete=False
@@ -1879,7 +1903,16 @@ def acquired_idle_drift(lattice: Lattice) -> float:
     try:
         write_engrams(path, lattice, "acquired-idle", {"phase": "acquired_idle"})
         payload = json.loads(path.read_text(encoding="utf-8"))
-        for key in ("working", "counted", "earlier", "earlier_count", "earliest", "earliest_count"):
+        for key in (
+            "working",
+            "counted",
+            "earlier",
+            "earlier_count",
+            "earliest",
+            "earliest_count",
+            "opening",
+            "opening_count",
+        ):
             if key in payload:
                 raise RuntimeError("idle stored a clock")
         if set(payload.get("acquired_value") or {}) != set(ACQUIRED_NOUNS):
@@ -1902,6 +1935,8 @@ def acquired_idle_drift(lattice: Lattice) -> float:
         lattice.earlier_count,
         lattice.earliest,
         lattice.earliest_count,
+        lattice.opening,
+        lattice.opening_count,
     ) != clocks:
         raise RuntimeError("idle reload moved a clock")
     kind_drift = max(abs(snapshot[name] - lattice.acquired_value[name]) for name in ACQUIRED_NOUNS)
@@ -2322,7 +2357,7 @@ def play_acquired(lattice: Lattice) -> dict[str, float | list[str] | bool]:
     false_abs: list[float] = []
     misses: list[str] = []
 
-    def clocks() -> tuple[float, float, float, float, float, float]:
+    def clocks() -> tuple[float, float, float, float, float, float, float, float]:
         return (
             lattice.working,
             lattice.counted,
@@ -2330,6 +2365,8 @@ def play_acquired(lattice: Lattice) -> dict[str, float | list[str] | bool]:
             lattice.earlier_count,
             lattice.earliest,
             lattice.earliest_count,
+            lattice.opening,
+            lattice.opening_count,
         )
 
     def ask(stated: str, holds: bool, label: str, kept_read: bool) -> None:
@@ -2478,6 +2515,8 @@ def play_follow(lattice: Lattice, first: str, second: str) -> dict[str, float | 
             lattice.earlier_count,
             lattice.earliest,
             lattice.earliest_count,
+            lattice.opening,
+            lattice.opening_count,
         )
         remainder = lattice.it_remainder(stated)
         got = lattice.remainder_answer(remainder)
@@ -2496,6 +2535,8 @@ def play_follow(lattice: Lattice, first: str, second: str) -> dict[str, float | 
             lattice.earlier_count,
             lattice.earliest,
             lattice.earliest_count,
+            lattice.opening,
+            lattice.opening_count,
         ) != kept and len(misses) < 8:
             misses.append(f"{label} moved the carrier")
 
@@ -2531,6 +2572,8 @@ def score_follows(lattice: Lattice, rows: list) -> tuple[float, int, list[str], 
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     misses: list[str] = []
     correct = 0
     true_abs: list[float] = []
@@ -2554,6 +2597,8 @@ def score_follows(lattice: Lattice, rows: list) -> tuple[float, int, list[str], 
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
     stats = {
         "true_max_abs": max(true_abs) if true_abs else 0.0,
         "false_min_abs": min(false_abs) if false_abs else 0.0,
@@ -2587,6 +2632,8 @@ def play_count(lattice: Lattice, count: str, subject: str) -> dict[str, float | 
             lattice.earlier_count,
             lattice.earliest,
             lattice.earliest_count,
+            lattice.opening,
+            lattice.opening_count,
         )
         if which == "count":
             remainder = lattice.it_count_remainder(stated)
@@ -2608,6 +2655,8 @@ def play_count(lattice: Lattice, count: str, subject: str) -> dict[str, float | 
             lattice.earlier_count,
             lattice.earliest,
             lattice.earliest_count,
+            lattice.opening,
+            lattice.opening_count,
         ) != kept and len(misses) < 8:
             misses.append(f"{label} moved the carrier")
 
@@ -2654,6 +2703,8 @@ def score_counts(lattice: Lattice, rows: list) -> tuple[float, int, list[str], d
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     misses: list[str] = []
     correct = 0
     true_abs: list[float] = []
@@ -2677,6 +2728,8 @@ def score_counts(lattice: Lattice, rows: list) -> tuple[float, int, list[str], d
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
     stats = {
         "true_max_abs": max(true_abs) if true_abs else 0.0,
         "false_min_abs": min(false_abs) if false_abs else 0.0,
@@ -2719,6 +2772,8 @@ def play_acquired_count(lattice: Lattice, count: str, noun: str) -> dict[str, fl
             lattice.earlier_count,
             lattice.earliest,
             lattice.earliest_count,
+            lattice.opening,
+            lattice.opening_count,
         )
         if which == "count":
             remainder = lattice.it_count_remainder(stated)
@@ -2740,6 +2795,8 @@ def play_acquired_count(lattice: Lattice, count: str, noun: str) -> dict[str, fl
             lattice.earlier_count,
             lattice.earliest,
             lattice.earliest_count,
+            lattice.opening,
+            lattice.opening_count,
         ) != kept and len(misses) < 8:
             misses.append(f"{label} moved the carrier")
 
@@ -2786,6 +2843,8 @@ def score_acquired_counts(lattice: Lattice, rows: list) -> tuple[float, int, lis
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     misses: list[str] = []
     correct = 0
     true_abs: list[float] = []
@@ -2809,6 +2868,8 @@ def score_acquired_counts(lattice: Lattice, rows: list) -> tuple[float, int, lis
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
     stats = {
         "true_max_abs": max(true_abs) if true_abs else 0.0,
         "false_min_abs": min(false_abs) if false_abs else 0.0,
@@ -2832,7 +2893,7 @@ def play_paragraph(lattice: Lattice, first: str, second: str) -> dict[str, float
     false_abs: list[float] = []
     misses: list[str] = []
 
-    def clocks() -> tuple[float, float, float, float, float, float]:
+    def clocks() -> tuple[float, float, float, float, float, float, float, float]:
         return (
             lattice.working,
             lattice.counted,
@@ -2840,6 +2901,8 @@ def play_paragraph(lattice: Lattice, first: str, second: str) -> dict[str, float
             lattice.earlier_count,
             lattice.earliest,
             lattice.earliest_count,
+            lattice.opening,
+            lattice.opening_count,
         )
 
     def ask(stated: str, holds: bool, label: str) -> None:
@@ -2890,6 +2953,8 @@ def score_paragraphs(lattice: Lattice, rows: list) -> tuple[float, int, list[str
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     misses: list[str] = []
     correct = 0
     true_abs: list[float] = []
@@ -2913,6 +2978,8 @@ def score_paragraphs(lattice: Lattice, rows: list) -> tuple[float, int, list[str
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
     stats = {
         "true_max_abs": max(true_abs) if true_abs else 0.0,
         "false_min_abs": min(false_abs) if false_abs else 0.0,
@@ -2936,7 +3003,7 @@ def play_acquired_paragraph(lattice: Lattice, first: str, second: str) -> dict[s
     false_abs: list[float] = []
     misses: list[str] = []
 
-    def clocks() -> tuple[float, float, float, float, float, float]:
+    def clocks() -> tuple[float, float, float, float, float, float, float, float]:
         return (
             lattice.working,
             lattice.counted,
@@ -2944,6 +3011,8 @@ def play_acquired_paragraph(lattice: Lattice, first: str, second: str) -> dict[s
             lattice.earlier_count,
             lattice.earliest,
             lattice.earliest_count,
+            lattice.opening,
+            lattice.opening_count,
         )
 
     def ask(stated: str, holds: bool, label: str) -> None:
@@ -2994,6 +3063,8 @@ def score_acquired_paragraphs(lattice: Lattice, rows: list) -> tuple[float, int,
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     misses: list[str] = []
     correct = 0
     true_abs: list[float] = []
@@ -3017,6 +3088,8 @@ def score_acquired_paragraphs(lattice: Lattice, rows: list) -> tuple[float, int,
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
     stats = {
         "true_max_abs": max(true_abs) if true_abs else 0.0,
         "false_min_abs": min(false_abs) if false_abs else 0.0,
@@ -3041,7 +3114,7 @@ def play_acquired_fact(lattice: Lattice, first: str, second: str, third: str) ->
     false_abs: list[float] = []
     misses: list[str] = []
 
-    def clocks() -> tuple[float, float, float, float, float, float]:
+    def clocks() -> tuple[float, float, float, float, float, float, float, float]:
         return (
             lattice.working,
             lattice.counted,
@@ -3049,6 +3122,8 @@ def play_acquired_fact(lattice: Lattice, first: str, second: str, third: str) ->
             lattice.earlier_count,
             lattice.earliest,
             lattice.earliest_count,
+            lattice.opening,
+            lattice.opening_count,
         )
 
     def ask(stated: str, holds: bool, label: str) -> None:
@@ -3105,6 +3180,8 @@ def score_acquired_facts(lattice: Lattice, rows: list) -> tuple[float, int, list
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     misses: list[str] = []
     correct = 0
     true_abs: list[float] = []
@@ -3128,6 +3205,145 @@ def score_acquired_facts(lattice: Lattice, rows: list) -> tuple[float, int, list
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
+    stats = {
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": max(carry) if carry else 0.0,
+    }
+    return correct / len(rows), correct, misses, stats
+
+
+def play_acquired_open(
+    lattice: Lattice, first: str, second: str, third: str, fourth: str
+) -> dict[str, float | list[str] | bool]:
+    """Four taught nouns. The opening kind survives the three sentences after it.
+
+    "is it" still reads only the latest clock. The fact read still sees
+    three clocks, so a fourth sentence drops the opening kind from that
+    read when no later sentence repeats it. This read sees the opening
+    clock. A question does not move the clocks. The noun gauges stay put.
+    """
+    row = AcquiredOpen(first, second, third, fourth)
+    kind = acquired_kind(first)
+    middle = acquired_kind(second)
+    third_kind = acquired_kind(third)
+    last = acquired_kind(fourth)
+    outside = row.outside_kind()
+    answers: list[str] = []
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    misses: list[str] = []
+
+    def clocks() -> tuple[float, float, float, float, float, float, float, float]:
+        return (
+            lattice.working,
+            lattice.counted,
+            lattice.earlier,
+            lattice.earlier_count,
+            lattice.earliest,
+            lattice.earliest_count,
+            lattice.opening,
+            lattice.opening_count,
+        )
+
+    def ask(stated: str, holds: bool, label: str) -> None:
+        kept = clocks()
+        remainder = lattice.it_open_remainder(stated)
+        got = lattice.remainder_answer(remainder)
+        want = "yes" if holds else "no"
+        answers.append(got)
+        if holds:
+            true_abs.append(abs(remainder))
+        else:
+            false_abs.append(abs(remainder))
+        if got != want and len(misses) < 8:
+            misses.append(f"{label} -> {got} (want {want})")
+        if clocks() != kept and len(misses) < 8:
+            misses.append(f"{label} moved the carrier")
+
+    lattice.clear_working()
+    ask(kind, False, f"empty is it {kind}")
+    lattice.deposit_acquired(first)
+    ask(kind, True, f"is it {kind}")
+    ask(middle, kind == middle, f"early is it {middle}")
+    lattice.deposit_acquired(second)
+    ask(middle, True, f"is it {middle}")
+    ask(kind, True, f"kept is it {kind}")
+    lattice.deposit_acquired(third)
+    ask(third_kind, True, f"is it {third_kind}")
+    ask(kind, True, f"surviving is it {kind}")
+    lattice.deposit_acquired(fourth)
+    if lattice.opening == 0.0:
+        misses.append("four sentences left the opening clock empty")
+    carry = max(
+        abs(lattice.working - lattice.content_value[last]),
+        abs(lattice.earlier - lattice.content_value[third_kind]),
+        abs(lattice.earliest - lattice.content_value[middle]),
+        abs(lattice.opening - lattice.content_value[kind]),
+    )
+    ask(last, True, f"is it {last}")
+    ask(kind, True, f"open is it {kind}")
+    if outside is not None:
+        ask(outside, False, f"is it {outside}")
+    if row.first_alone():
+        kept = clocks()
+        if lattice.remainder_answer(lattice.it_surviving_remainder(kind)) != "no":
+            misses.append("fact read kept the opening kind")
+        if lattice.predict_it(kind) != "no" or lattice.predict_it(last) != "yes":
+            misses.append("is it left the latest clock")
+        if clocks() != kept:
+            misses.append("the fact question moved the carrier")
+    return {
+        "ok": not misses,
+        "answers": answers,
+        "misses": misses,
+        "true_max_abs": max(true_abs) if true_abs else 0.0,
+        "false_min_abs": min(false_abs) if false_abs else 0.0,
+        "carry_max": carry,
+    }
+
+
+def score_acquired_opens(lattice: Lattice, rows: list) -> tuple[float, int, list[str], dict[str, float]]:
+    """Each four taught nouns is its own paragraph. The clocks return."""
+    if not rows:
+        return 0.0, 0, [], {}
+    saved = lattice.working
+    saved_count = lattice.counted
+    saved_earlier = lattice.earlier
+    saved_earlier_count = lattice.earlier_count
+    saved_earliest = lattice.earliest
+    saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
+    misses: list[str] = []
+    correct = 0
+    true_abs: list[float] = []
+    false_abs: list[float] = []
+    carry: list[float] = []
+    try:
+        for row in rows:
+            played = play_acquired_open(
+                lattice, row.first, row.second, row.third, row.fourth
+            )
+            true_abs.append(float(played["true_max_abs"]))
+            false_abs.append(float(played["false_min_abs"]))
+            carry.append(float(played["carry_max"]))
+            if played["ok"]:
+                correct += 1
+            elif len(misses) < 8:
+                detail = played["misses"][0] if played["misses"] else "miss"
+                misses.append(f"{row.text()} {detail}")
+    finally:
+        lattice.working = saved
+        lattice.counted = saved_count
+        lattice.earlier = saved_earlier
+        lattice.earlier_count = saved_earlier_count
+        lattice.earliest = saved_earliest
+        lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
     stats = {
         "true_max_abs": max(true_abs) if true_abs else 0.0,
         "false_min_abs": min(false_abs) if false_abs else 0.0,
@@ -3153,7 +3369,7 @@ def play_kept_count(lattice: Lattice, count: str, subject: str, second: str) -> 
     false_abs: list[float] = []
     misses: list[str] = []
 
-    def clocks() -> tuple[float, float, float, float, float, float]:
+    def clocks() -> tuple[float, float, float, float, float, float, float, float]:
         return (
             lattice.working,
             lattice.counted,
@@ -3161,6 +3377,8 @@ def play_kept_count(lattice: Lattice, count: str, subject: str, second: str) -> 
             lattice.earlier_count,
             lattice.earliest,
             lattice.earliest_count,
+            lattice.opening,
+            lattice.opening_count,
         )
 
     def ask(which: str, stated: str, holds: bool, label: str, kept_read: bool) -> None:
@@ -3228,6 +3446,8 @@ def score_kept_counts(lattice: Lattice, rows: list) -> tuple[float, int, list[st
     saved_earlier_count = lattice.earlier_count
     saved_earliest = lattice.earliest
     saved_earliest_count = lattice.earliest_count
+    saved_opening = lattice.opening
+    saved_opening_count = lattice.opening_count
     misses: list[str] = []
     correct = 0
     true_abs: list[float] = []
@@ -3251,6 +3471,8 @@ def score_kept_counts(lattice: Lattice, rows: list) -> tuple[float, int, list[st
         lattice.earlier_count = saved_earlier_count
         lattice.earliest = saved_earliest
         lattice.earliest_count = saved_earliest_count
+        lattice.opening = saved_opening
+        lattice.opening_count = saved_opening_count
     stats = {
         "true_max_abs": max(true_abs) if true_abs else 0.0,
         "false_min_abs": min(false_abs) if false_abs else 0.0,

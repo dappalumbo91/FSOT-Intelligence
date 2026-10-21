@@ -87,7 +87,13 @@ stays the first teaching. A counted sentence can name one of those nouns, so
 two wolves leaves two and animal. Two of those nouns make a paragraph, so a
 wolf then a pine keeps animal beside plant. Three of those nouns keep the
 first kind after two later sentences, so a wolf, then a pine, then a clay
-still holds animal. Those reads are in this package. No date has been
+still holds animal. Those reads are in this package. Four of those
+nouns make an open paragraph. A wolf, then a pine, then a clay, then a
+mist still holds animal after the three-clock fact read has let it go.
+That paragraph is measured locally. The resting fact stays the first
+teaching, so a wolf is an animal. A second sense of the same name
+belongs beside that fact, in the situation that names it. The
+published package remains the 2026-10-20 report. No date has been
 measured for matching a public language model.
 
 1. **Quantities people spell.** Ten million, a hundred million, a billion,
@@ -370,6 +376,35 @@ measured for matching a public language model.
     reads, attend parity exact, worst consensus gap 0. That read is in
     the 2026-10-20 package, at 1970 learned numbers. This fact adds no
     gauges. Width stays 60.
+16. **An open paragraph keeps the opening kind.** Four kind sentences.
+    The fourth writes its kind on the latest clock and moves the opening
+    kind onto one more clock. "is it" reads the latest clock. The fact
+    read sees the latest three clocks, so after "a wolf is an animal. a
+    pine is a plant. a clay is a rock. a mist is a water" that read
+    answers no for animal. The open read answers yes for animal, plant,
+    rock, and water. "is it" answers yes for water and no for animal.
+    Wolf then pine then clay then pine leaves water unnamed, so water
+    reads no. Wolf then cow then hare then wolf stays on animal, and
+    plant reads no. Three sentences leave the opening clock empty, so
+    wolf then pine then clay still answers no, yes, no, yes, yes, no,
+    yes, yes, yes, no. Measured on 2026-10-20, on the promoted gauges:
+    10000 paragraphs, exact on the train slice (8000), the hold slice
+    (2000), and the whole table. The widest true remainder is 9.584e-5.
+    The carry gap is that same 9.584e-5. The smallest false remainder
+    is 0.420013, and the drop is about 0.238. Wolf then pine then clay
+    then mist answers no, yes, no, yes, yes, yes, yes, yes, yes, and
+    its carry is 9.584e-5. Wolf then pine then clay then pine answers
+    no, yes, no, yes, yes, yes, yes, yes, yes, no, and its carry is
+    8.519e-5. Wolf then cow then hare then wolf answers no, yes, yes,
+    yes, yes, yes, yes, yes, yes, no, and its carry is 4.259e-5. The
+    train, hold, and closed passes together took 16.10 seconds. The
+    kind gauges and the individual gauges stayed on their values.
+    Digit gauges, number-word gauges, and the content gauges stayed on
+    the promoted values. The follow-up, the kind paragraph, one cat,
+    the kept count, wolf then pine, two wolves, one pine, nine ponds,
+    and wolf then pine then clay stayed on their previous lists. This
+    paragraph adds no gauges. The published package remains the
+    2026-10-20 report. Width stays 60.
 
 ## Authority
 

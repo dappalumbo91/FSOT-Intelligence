@@ -1065,6 +1065,86 @@ def split_acquired_facts() -> tuple[list[AcquiredFact], list[AcquiredFact]]:
     return train, hold
 
 
+def open_held(first: int, second: int, third: int, fourth: int) -> bool:
+    """Deterministic fifth of four sentences. No coefficient is a multiple of 5."""
+    return (first * 3 + second * 4 + third * 2 + fourth) % 5 == 0
+
+
+@dataclass(frozen=True)
+class AcquiredOpen:
+    """Four taught nouns. The opening kind survives the three sentences after it."""
+
+    first: str
+    second: str
+    third: str
+    fourth: str
+
+    def sentence(self, noun: str) -> str:
+        kind = acquired_kind(noun)
+        return f"{article(noun)} {noun} is {article(kind)} {kind}"
+
+    def text(self) -> str:
+        return ". ".join(
+            self.sentence(noun)
+            for noun in (self.first, self.second, self.third, self.fourth)
+        )
+
+    def kinds(self) -> tuple[str, str, str, str]:
+        return (
+            acquired_kind(self.first),
+            acquired_kind(self.second),
+            acquired_kind(self.third),
+            acquired_kind(self.fourth),
+        )
+
+    def first_alone(self) -> bool:
+        """The opening kind is on none of the three later sentences."""
+        first, second, third, fourth = self.kinds()
+        return first != second and first != third and first != fourth
+
+    def one_kind(self) -> bool:
+        first, second, third, fourth = self.kinds()
+        return first == second == third == fourth
+
+    def outside_kind(self) -> str | None:
+        """A head that none of the four sentences names, when one remains."""
+        used = set(self.kinds())
+        for head in KIND_HEADS:
+            if head not in used:
+                return head
+        return None
+
+
+def all_acquired_opens() -> list[AcquiredOpen]:
+    """Every ordered four of taught nouns."""
+    return [
+        AcquiredOpen(first, second, third, fourth)
+        for first in ACQUIRED_NOUNS
+        for second in ACQUIRED_NOUNS
+        for third in ACQUIRED_NOUNS
+        for fourth in ACQUIRED_NOUNS
+    ]
+
+
+def split_acquired_opens() -> tuple[list[AcquiredOpen], list[AcquiredOpen]]:
+    """The open fifth. The noun indexes take the four subject slots."""
+    index = {word: place for place, word in enumerate(ACQUIRED_NOUNS)}
+    rows = all_acquired_opens()
+    train = [
+        row for row in rows
+        if not open_held(
+            index[row.first], index[row.second], index[row.third], index[row.fourth]
+        )
+    ]
+    hold = [
+        row for row in rows
+        if open_held(
+            index[row.first], index[row.second], index[row.third], index[row.fourth]
+        )
+    ]
+    return train, hold
+
+
 @dataclass(frozen=True)
 class KeptCount:
     """A counted sentence, then a kind sentence. The count stays on the earlier clock."""
