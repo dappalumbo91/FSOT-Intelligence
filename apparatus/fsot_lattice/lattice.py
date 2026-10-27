@@ -667,10 +667,11 @@ class Lattice:
         return row.count * self._gauge(row.addend, surface)
 
     def predict_product(self, row: Product, surface: str) -> str:
-        pred = self.product_quantity(row, surface)
+        """Name the product through the place reader, including a result past nine."""
+        named = self.read_place(self.product_quantity(row, surface), surface)[0]
         if surface == "digit":
-            return _nearest(pred, self.digit_value, DIGITS)
-        return _nearest(pred, self.word_value, [WORD_OF[i] for i in range(10)])
+            return decimal_name(named)
+        return number_name(named)
 
     def span_steps(self, span: Span, surface: str) -> tuple[float, list[tuple[int, float]]]:
         steps = [

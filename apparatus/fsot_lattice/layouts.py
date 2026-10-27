@@ -8,7 +8,9 @@ and the fluid step lands inside the floor.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from fsot_lattice.apply import DROP, GAUGE_FLOOR
 from fsot_lattice.engine import fluid_lr
@@ -32,6 +34,8 @@ class LayoutScore:
     true_max: float
     false_min: float
     residual: float
+    name_gauge: tuple[tuple[str, float], ...] = ()
+    home_gauge: tuple[tuple[str, float], ...] = ()
 
 
 def _clean(value: object) -> str:
@@ -94,7 +98,13 @@ def home_reading(homes: list[str]) -> str:
     return "label"
 
 
-def settle_layout(settled: dict[str, str], epochs: int = 4000, observer=None) -> LayoutScore:
+def settle_layout(
+    settled: dict[str, str],
+    epochs: int = 4000,
+    observer=None,
+    name_column: str = "",
+    home_column: str = "",
+) -> LayoutScore:
     """Pull each name onto its home with the fluid step. The home gauges stay put."""
     names = sorted(settled)
     homes = sorted(set(settled.values()))
@@ -180,8 +190,8 @@ def settle_layout(settled: dict[str, str], epochs: int = 4000, observer=None) ->
         readback = max(abs(name_gauge[name] / K - float(settled[name])) for name in names)
         reason = f"{reason}, readback {readback:.6e}"
     return LayoutScore(
-        name_column="",
-        home_column="",
+        name_column=name_column,
+        home_column=home_column,
         names=len(names),
         homes=len(homes),
         conflicted=(),
@@ -193,6 +203,54 @@ def settle_layout(settled: dict[str, str], epochs: int = 4000, observer=None) ->
         true_max=true_max,
         false_min=false_min,
         residual=residual,
+        name_gauge=tuple(sorted(name_gauge.items())),
+        home_gauge=tuple(sorted(home_gauge.items())),
+    )
+
+
+def save_layout(path: Path, score: LayoutScore, pin: str, source: str) -> None:
+    """Write a landed layout. A miss is not kept."""
+    if not score.chewable:
+        raise RuntimeError("a missed layout is not kept")
+    payload = {
+        "pin": pin,
+        "source": source,
+        "name_column": score.name_column,
+        "home_column": score.home_column,
+        "names": score.names,
+        "homes": score.homes,
+        "epochs": score.epochs,
+        "true_max": score.true_max,
+        "false_min": score.false_min,
+        "residual": score.residual,
+        "name_gauge": {name: gauge for name, gauge in score.name_gauge},
+        "home_gauge": {home: gauge for home, gauge in score.home_gauge},
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def load_layout(path: Path) -> LayoutScore:
+    """Read a kept layout back into gauges the asker can use."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    names = tuple(sorted((key, float(value)) for key, value in payload["name_gauge"].items()))
+    homes = tuple(sorted((key, float(value)) for key, value in payload["home_gauge"].items()))
+    return LayoutScore(
+        name_column=payload["name_column"],
+        home_column=payload["home_column"],
+        names=len(names),
+        homes=len(homes),
+        conflicted=(),
+        chewable=True,
+        reason="kept",
+        epochs=int(payload["epochs"]),
+        train_acc=1.0,
+        hold_acc=1.0,
+        true_max=float(payload["true_max"]),
+        false_min=float(payload["false_min"]),
+        residual=float(payload["residual"]),
+        name_gauge=names,
+        home_gauge=homes,
     )
 
 
@@ -242,6 +300,8 @@ def organize_table(rows: list[dict[str, object]], columns: list[str] | None = No
                     true_max=score.true_max,
                     false_min=score.false_min,
                     residual=score.residual,
+                    name_gauge=score.name_gauge,
+                    home_gauge=score.home_gauge,
                 )
             )
     return found
