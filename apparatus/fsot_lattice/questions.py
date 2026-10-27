@@ -317,7 +317,7 @@ def ask_quotient(lattice: Lattice, dividend: int, divisor: int, surface: str = "
 _PLACE_SPAN = 10**13
 # A thousand matches the spelling group. A limb times a limb stays inside the span.
 _LIMB = THOUSAND_SPAN
-_LIMB_CAP = 10
+_LIMB_CAP = 13
 # SI metre. This many metres per second. It is not a fitted coefficient, and it is not K.
 _LIGHT_METRES = 299_792_458
 _SCALE_WORD = (
@@ -331,6 +331,9 @@ _SCALE_WORD = (
     "sextillion",
     "septillion",
     "octillion",
+    "nonillion",
+    "decillion",
+    "undecillion",
 )
 
 
@@ -1116,7 +1119,7 @@ def _see(worst: list[float], gap: float) -> None:
 
 
 def _limb_split(number: int) -> tuple[int, ...] | None:
-    """Groups of a thousand, least first. More than ten groups stay open."""
+    """Groups of a thousand, least first. More than thirteen groups stay open."""
     if number < 0:
         return None
     if number == 0:
