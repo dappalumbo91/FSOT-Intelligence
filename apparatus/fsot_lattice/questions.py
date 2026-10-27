@@ -32,7 +32,8 @@ of ones that ends in two.
 A whole square root repeats. One period of that fraction names the Pell
 pair: the first square is one above the count times the second square.
 A square past the place span is the thousand product, and adding the
-difference back meets the larger square.
+difference back meets the larger square. Composing that pair with itself
+names each later solution.
 """
 
 from __future__ import annotations
@@ -3119,6 +3120,139 @@ def ask_negative_pell(lattice: Lattice, number: int, surface: str = "digit") -> 
     if found is None:
         return "open"
     return _joined_pair(found[0], found[1], surface)
+
+
+def _gauge_sum(lattice: Lattice, left: int, right: int, surface: str) -> int | None:
+    """The sum. A sum inside the span keeps the place addition."""
+    if left < 0 or right < 0:
+        return None
+    if left >= _PLACE_SPAN or right >= _PLACE_SPAN or left + right >= _PLACE_SPAN:
+        found = _wide_add(lattice, left, right, surface)
+        if found is None:
+            return None
+        value = _limb_value(found[0])
+        if value != left + right:
+            return None
+        return value
+    added = _add_counts(lattice, left, right, surface)
+    if added is None:
+        return None
+    return added[0]
+
+
+def _compose_pell(
+    lattice: Lattice,
+    number: int,
+    x1: int,
+    y1: int,
+    x_count: int,
+    y_count: int,
+    surface: str,
+) -> tuple[int, int] | None:
+    """The least solution composed with this pair.
+
+    The first count is x1 times x, plus the number times y1 times y.
+    The second count is x1 times y, plus y1 times x. Both orders meet.
+    """
+    if min(number, x1, y1, x_count, y_count) < 0:
+        return None
+    xx_forward = _full_product(lattice, x1, x_count, surface)
+    xx_back = _full_product(lattice, x_count, x1, surface)
+    if xx_forward is None or xx_forward != xx_back:
+        return None
+    y_forward = _full_product(lattice, y1, y_count, surface)
+    y_back = _full_product(lattice, y_count, y1, surface)
+    if y_forward is None or y_forward != y_back:
+        return None
+    scaled_forward = _full_product(lattice, number, y_forward, surface)
+    scaled_back = _full_product(lattice, y_forward, number, surface)
+    by_first = _full_product(lattice, number, y1, surface)
+    if scaled_forward is None or by_first is None or scaled_forward != scaled_back:
+        return None
+    grouped = _full_product(lattice, by_first, y_count, surface)
+    if grouped is None or grouped != scaled_forward:
+        return None
+    cross_forward = _full_product(lattice, x1, y_count, surface)
+    cross_back = _full_product(lattice, y_count, x1, surface)
+    other_forward = _full_product(lattice, y1, x_count, surface)
+    other_back = _full_product(lattice, x_count, y1, surface)
+    if (
+        cross_forward is None
+        or other_forward is None
+        or cross_forward != cross_back
+        or other_forward != other_back
+    ):
+        return None
+    new_x = _gauge_sum(lattice, xx_forward, scaled_forward, surface)
+    new_x_back = _gauge_sum(lattice, scaled_forward, xx_forward, surface)
+    new_y = _gauge_sum(lattice, cross_forward, other_forward, surface)
+    new_y_back = _gauge_sum(lattice, other_forward, cross_forward, surface)
+    if (
+        new_x is None
+        or new_y is None
+        or new_x != new_x_back
+        or new_y != new_y_back
+        or new_y <= 0
+    ):
+        return None
+    if new_x * new_x - number * new_y * new_y != 1:
+        return None
+    if new_x < _PLACE_SPAN and new_y < _PLACE_SPAN:
+        if _square_gap(lattice, new_x, new_y, number, surface) != 1:
+            return None
+    return new_x, new_y
+
+
+def _pell_at_step(
+    lattice: Lattice, number: int, step: int, surface: str
+) -> tuple[int, int] | None:
+    """The least solution composed with itself. Step one is that solution."""
+    if number < 0 or step < 1 or step > 32:
+        return None
+    base = _pell_solution(lattice, number, 1, surface)
+    if base is None:
+        return None
+    if step == 1:
+        return base
+    x1, y1 = base
+    x_count, y_count = base
+    for _index in range(step - 1):
+        found = _compose_pell(
+            lattice, number, x1, y1, x_count, y_count, surface
+        )
+        if found is None:
+            return None
+        x_count, y_count = found
+    return x_count, y_count
+
+
+def _broad_name(lattice: Lattice, number: int, surface: str) -> str:
+    """The place name, or the thousand groups once the count passes a trillion."""
+    if number < 0:
+        return "open"
+    limbs = _take_limbs(lattice, number, surface)
+    if limbs is None:
+        return "open"
+    return _wide_name(limbs, surface)
+
+
+def ask_pell_step(
+    lattice: Lattice, number: int, step: int, surface: str = "digit"
+) -> str:
+    """The pair made by composing the least solution with itself.
+
+    Step one is the least pair. Each later pair is that solution composed
+    with the pair before it. A perfect square stays open. A pair past the
+    thousand groups stays open.
+    """
+    found = _pell_at_step(lattice, number, step, surface)
+    if found is None:
+        return "open"
+    first = _broad_name(lattice, found[0], surface)
+    second = _broad_name(lattice, found[1], surface)
+    if first == "open" or second == "open":
+        return "open"
+    return f"{first} and {second}"
 
 
 def _home_on(lattice: Lattice, score: LayoutScore, name: str) -> str | None:
