@@ -14,7 +14,10 @@ addition. When that long sum misses the drop, the smaller count is read
 one digit at a time. A product past the place span is read a thousand at
 a time. Rest energy is that product: the mass, times the speed of light,
 times the speed of light. A speed below light multiplies that energy
-by the exact Lorentz factor when the two squares meet. A power repeats that product. The totient counts residues whose
+by the exact Lorentz factor when the two squares meet. The total minus
+the rest is the kinetic energy. Momentum is the mass times that speed,
+and the energy and the momentum meet on the square of mass times the speed
+of light. A power repeats that product. The totient counts residues whose
 common measure is one, and the order is the least power that leaves one.
 A generator is an order that meets the totient. The least power that hits
 a leftover is the logarithm. A square leftover meets Euler's count on an
@@ -1442,15 +1445,16 @@ def _wide_divide(
 ) -> tuple[tuple[int, ...], int, float] | None:
     """Quotient groups and the leftover.
 
-    A dividend inside the span keeps the place division. A wider dividend
-    is divided from the highest thousand. The leftover sits strictly below
-    the divisor, and the quotient times the divisor rebuilds the dividend.
+    A dividend below one thousand keeps the place division. A wider dividend
+    is divided from the highest thousand, so each quotient digit stays inside
+    one group. The leftover sits strictly below the divisor, and the quotient
+    times the divisor rebuilds the dividend.
     """
     if dividend < 0 or divisor <= 0 or divisor >= _PLACE_SPAN:
         return None
     if _held_integer(lattice, divisor, surface) != divisor:
         return None
-    if dividend < _PLACE_SPAN:
+    if dividend < _LIMB:
         split = _divide(lattice, dividend, divisor, surface)
         if split is None:
             return None
@@ -1513,6 +1517,51 @@ def _wide_divide(
     if quotient * divisor + remainder != dividend:
         return None
     return tuple(quotients), remainder, worst[0]
+
+
+def _wide_subtract(
+    lattice: Lattice, left: int, right: int, surface: str
+) -> tuple[tuple[int, ...], float] | None:
+    """left minus right. Adding the difference back meets the left count.
+
+    A pair inside the span keeps the place subtraction. A wider pair takes
+    each thousand off and borrows when a limb is short.
+    """
+    if left < 0 or right < 0 or right > left:
+        return None
+    if right == 0:
+        if left < _PLACE_SPAN and _held_integer(lattice, left, surface) != left:
+            return None
+        limbs = _take_limbs(lattice, left, surface)
+        if limbs is None:
+            return None
+        return limbs, 0.0
+    if left < _PLACE_SPAN:
+        found = _subtract_counts(lattice, left, right, surface)
+        if found is None:
+            return None
+        limbs = _limb_split(found[0])
+        if limbs is None or _limb_value(limbs) != found[0]:
+            return None
+        return limbs, found[1]
+    left_limbs = _take_limbs(lattice, left, surface)
+    right_limbs = _take_limbs(lattice, right, surface)
+    if left_limbs is None or right_limbs is None or len(right_limbs) > len(left_limbs):
+        return None
+    acc = list(left_limbs)
+    worst = [0.0]
+    for index, digit in enumerate(right_limbs):
+        if not _limb_subtract(lattice, acc, index, digit, surface, worst):
+            return None
+    while len(acc) > 1 and acc[-1] == 0:
+        acc.pop()
+    if _limb_value(acc) != left - right:
+        return None
+    rebuilt = _wide_add(lattice, _limb_value(acc), right, surface)
+    if rebuilt is None or _limb_value(rebuilt[0]) != left:
+        return None
+    _see(worst, rebuilt[1])
+    return tuple(acc), worst[0]
 
 
 def _rest_joules(
@@ -1643,6 +1692,202 @@ def ask_motion(
     A zero rise is the rest energy. The mass and the speed are not a stored pair.
     """
     found = _motion_joules(lattice, mass, rise, run, surface)
+    if found is None:
+        return "open"
+    return _wide_name(found[0], surface)
+
+
+def _kinetic_joules(
+    lattice: Lattice, mass: int, rise: int, run: int, surface: str
+) -> tuple[tuple[int, ...], float] | None:
+    """Total energy minus rest energy.
+
+    The same count is the rest energy times the run minus the Lorentz
+    denominator, divided by that denominator.
+    """
+    if mass < 0:
+        return None
+    factor = _light_factor(lattice, rise, run, surface)
+    if factor is None:
+        return None
+    side, gap = factor
+    motion = _motion_joules(lattice, mass, rise, run, surface)
+    rest = _rest_joules(lattice, mass, surface)
+    if motion is None or rest is None:
+        return None
+    motion_count = _limb_value(motion[0])
+    rest_count = _limb_value(rest[0])
+    if motion_count < rest_count or run < side:
+        return None
+    direct = _wide_subtract(lattice, motion_count, rest_count, surface)
+    if direct is None:
+        return None
+    extra = run - side
+    grown = _times(lattice, rest_count, extra, surface)
+    if grown is None:
+        return None
+    other = _wide_divide(lattice, _limb_value(grown[0]), side, surface)
+    if other is None or other[1] != 0 or other[0] != direct[0]:
+        return None
+    joules = _limb_value(direct[0])
+    if joules * side != rest_count * extra:
+        return None
+    for piece in (motion[1], rest[1], direct[1], grown[1], other[2]):
+        if piece > gap:
+            gap = piece
+    return direct[0], gap
+
+
+def ask_kinetic(
+    lattice: Lattice, mass: int, rise: int, run: int, surface: str = "digit"
+) -> str:
+    """Kinetic joules of this mass at rise/run of the speed of light.
+
+    A zero rise is zero. The total and the rest are not stored.
+    """
+    found = _kinetic_joules(lattice, mass, rise, run, surface)
+    if found is None:
+        return "open"
+    return _wide_name(found[0], surface)
+
+
+def _momentum_count(
+    lattice: Lattice, mass: int, rise: int, run: int, surface: str
+) -> tuple[tuple[int, ...], float] | None:
+    """Mass times rise times the speed of light, over the Lorentz denominator.
+
+    The mass-then-speed product and the speed-then-mass product both divide
+    exactly and name the same count.
+    """
+    if mass < 0:
+        return None
+    factor = _light_factor(lattice, rise, run, surface)
+    if factor is None:
+        return None
+    side, gap = factor
+    if rise == 0:
+        if _held_integer(lattice, 0, surface) != 0:
+            return None
+        return (0,), gap
+    by_mass = _times(lattice, mass, rise, surface)
+    by_light = _times(lattice, _LIGHT_METRES, mass, surface)
+    if by_mass is None or by_light is None:
+        return None
+    first = _times(lattice, _limb_value(by_mass[0]), _LIGHT_METRES, surface)
+    second = _times(lattice, _limb_value(by_light[0]), rise, surface)
+    if first is None or second is None:
+        return None
+    direct = _wide_divide(lattice, _limb_value(first[0]), side, surface)
+    other = _wide_divide(lattice, _limb_value(second[0]), side, surface)
+    if (
+        direct is None
+        or other is None
+        or direct[1] != 0
+        or other[1] != 0
+        or other[0] != direct[0]
+    ):
+        return None
+    count = _limb_value(direct[0])
+    if count * side != mass * rise * _LIGHT_METRES:
+        return None
+    for piece in (by_mass[1], by_light[1], first[1], second[1], direct[2], other[2]):
+        if piece > gap:
+            gap = piece
+    return direct[0], gap
+
+
+def ask_momentum(
+    lattice: Lattice, mass: int, rise: int, run: int, surface: str = "digit"
+) -> str:
+    """Momentum of this mass at rise/run of the speed of light.
+
+    A zero rise is zero. A count that does not divide evenly stays open.
+    """
+    found = _momentum_count(lattice, mass, rise, run, surface)
+    if found is None:
+        return "open"
+    return _wide_name(found[0], surface)
+
+
+def _shared_square(
+    lattice: Lattice, mass: int, rise: int, run: int, surface: str
+) -> tuple[tuple[int, ...], float] | None:
+    """(energy / c) squared, minus momentum squared, is (mass * c) squared.
+
+    The energy-over-light count is mass times the run times the speed,
+    divided by the Lorentz denominator. Multiplying that count by the speed
+    has to meet the energy. Dividing the joule count by the speed in one
+    span-sized quotient is not the read.
+    """
+    if mass < 0:
+        return None
+    factor = _light_factor(lattice, rise, run, surface)
+    motion = _motion_joules(lattice, mass, rise, run, surface)
+    momentum = _momentum_count(lattice, mass, rise, run, surface)
+    if factor is None or motion is None or momentum is None:
+        return None
+    side = factor[0]
+    by_mass = _times(lattice, mass, _LIGHT_METRES, surface)
+    if by_mass is None:
+        return None
+    grown = _times(lattice, _limb_value(by_mass[0]), run, surface)
+    if grown is None:
+        return None
+    per_light = _wide_divide(lattice, _limb_value(grown[0]), side, surface)
+    if per_light is None or per_light[1] != 0:
+        return None
+    energy_over = _limb_value(per_light[0])
+    restored = _times(lattice, energy_over, _LIGHT_METRES, surface)
+    if restored is None or restored[0] != motion[0]:
+        return None
+    moved = _limb_value(momentum[0])
+    mass_light = mass * _LIGHT_METRES
+    left = _times(lattice, energy_over, energy_over, surface)
+    right = _times(lattice, moved, moved, surface)
+    goal = _times(lattice, mass_light, mass_light, surface)
+    if left is None or right is None or goal is None:
+        return None
+    left_count = _limb_value(left[0])
+    right_count = _limb_value(right[0])
+    goal_count = _limb_value(goal[0])
+    if left_count < right_count:
+        return None
+    diff = _wide_subtract(lattice, left_count, right_count, surface)
+    if diff is None or _limb_value(diff[0]) != goal_count:
+        return None
+    rebuilt = _wide_add(lattice, goal_count, right_count, surface)
+    if rebuilt is None or _limb_value(rebuilt[0]) != left_count:
+        return None
+    if energy_over * energy_over - moved * moved != mass_light * mass_light:
+        return None
+    gap = factor[1]
+    for piece in (
+        motion[1],
+        momentum[1],
+        by_mass[1],
+        grown[1],
+        per_light[2],
+        restored[1],
+        left[1],
+        right[1],
+        goal[1],
+        diff[1],
+        rebuilt[1],
+    ):
+        if piece > gap:
+            gap = piece
+    return goal[0], gap
+
+
+def ask_balance(
+    lattice: Lattice, mass: int, rise: int, run: int, surface: str = "digit"
+) -> str:
+    """The square of mass times the speed of light, rebuilt from energy and momentum.
+
+    Energy over the speed of light, squared, minus the momentum squared,
+    names this count. A momentum that stays open keeps the balance open.
+    """
+    found = _shared_square(lattice, mass, rise, run, surface)
     if found is None:
         return "open"
     return _wide_name(found[0], surface)
