@@ -31,6 +31,8 @@ two-term sum, and consecutive Fibonacci counts are the continued fraction
 of ones that ends in two.
 A whole square root repeats. One period of that fraction names the Pell
 pair: the first square is one above the count times the second square.
+A square past the place span is the thousand product, and adding the
+difference back meets the larger square.
 """
 
 from __future__ import annotations
@@ -2508,12 +2510,36 @@ def _product_count(
     return found[0]
 
 
+def _full_product(
+    lattice: Lattice, left: int, right: int, surface: str
+) -> int | None:
+    """The product. A product past the span is the thousand product."""
+    if left < 0 or right < 0:
+        return None
+    if left == 0 or right == 0:
+        if _held_integer(lattice, 0, surface) != 0:
+            return None
+        return 0
+    if left >= _PLACE_SPAN or right >= _PLACE_SPAN or left * right >= _PLACE_SPAN:
+        found = _times(lattice, left, right, surface)
+        if found is None:
+            return None
+        value = _limb_value(found[0])
+        if value != left * right:
+            return None
+        return value
+    return _product_count(lattice, left, right, surface)
+
+
 def _apart_by_one(lattice: Lattice, smaller: int, larger: int, surface: str) -> bool:
     """The larger count is the smaller one plus one."""
     if smaller < 0 or larger < 0 or larger != smaller + 1:
         return False
     if smaller == 0:
         return _held_integer(lattice, larger, surface) == larger
+    if smaller >= _PLACE_SPAN or larger >= _PLACE_SPAN:
+        found = _wide_add(lattice, smaller, 1, surface)
+        return found is not None and _limb_value(found[0]) == larger
     added = _add_counts(lattice, smaller, 1, surface)
     return added is not None and added[0] == larger
 
@@ -2546,8 +2572,8 @@ def _pairs_from_quotients(
         next_k = _scale_add(lattice, quotient, curr_k, prev_k, surface)
         if next_h is None or next_k is None or next_k <= 0:
             return None
-        left_prod = _product_count(lattice, next_h, curr_k, surface)
-        right_prod = _product_count(lattice, curr_h, next_k, surface)
+        left_prod = _full_product(lattice, next_h, curr_k, surface)
+        right_prod = _full_product(lattice, curr_h, next_k, surface)
         if left_prod is None or right_prod is None:
             return None
         if index % 2 == 0:
@@ -2959,37 +2985,45 @@ def _root_terms(head: int, period: tuple[int, ...], index: int) -> tuple[int, ..
 def _square_gap(
     lattice: Lattice, left: int, right: int, number: int, surface: str
 ) -> int | None:
-    """left squared, minus number times right squared."""
+    """left squared, minus number times right squared.
+
+    A square inside the span keeps the place product. A wider square is the
+    thousand product, and adding the difference back meets the larger square.
+    """
     if left < 0 or right < 0 or number < 0:
         return None
-    left_square = _bounded_square(lattice, left, surface)
-    right_square = _bounded_square(lattice, right, surface)
+    if left >= _PLACE_SPAN or right >= _PLACE_SPAN or number >= _PLACE_SPAN:
+        return None
+    left_square = _full_product(lattice, left, left, surface)
+    right_square = _full_product(lattice, right, right, surface)
     if left_square is None or right_square is None:
         return None
-    scaled = _product_count(lattice, number, right_square, surface)
+    scaled = _full_product(lattice, number, right_square, surface)
     if scaled is None:
         return None
     if left_square == scaled:
         return 0
     if left_square > scaled:
         diff = left_square - scaled
-        if diff == 1:
-            if not _apart_by_one(lattice, scaled, left_square, surface):
-                return None
-            return 1
-        added = _add_counts(lattice, scaled, diff, surface)
-        if added is None or added[0] != left_square:
-            return None
-        return diff
-    diff = scaled - left_square
+        small, big = scaled, left_square
+        sign = 1
+    else:
+        diff = scaled - left_square
+        small, big = left_square, scaled
+        sign = -1
     if diff == 1:
-        if not _apart_by_one(lattice, left_square, scaled, surface):
+        if not _apart_by_one(lattice, small, big, surface):
             return None
-        return -1
-    added = _add_counts(lattice, left_square, diff, surface)
-    if added is None or added[0] != scaled:
+        return sign
+    if small < _PLACE_SPAN and diff < _PLACE_SPAN and big < _PLACE_SPAN:
+        added = _add_counts(lattice, small, diff, surface)
+        if added is None or added[0] != big:
+            return None
+        return sign * diff
+    rebuilt = _wide_add(lattice, small, diff, surface)
+    if rebuilt is None or _limb_value(rebuilt[0]) != big:
         return None
-    return -diff
+    return sign * diff
 
 
 def _pell_solution(
