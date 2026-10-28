@@ -33,7 +33,9 @@ A whole square root repeats. One period of that fraction names the Pell
 pair: the first square is one above the count times the second square.
 A square past the place span is the thousand product, and adding the
 difference back meets the larger square. Composing that pair with itself
-names each later solution.
+names each later solution. Sixty-one of those compositions stay inside
+one hundred ninety-five thousand-groups, and each group keeps its
+short-scale name.
 """
 
 from __future__ import annotations
@@ -317,12 +319,14 @@ def ask_quotient(lattice: Lattice, dividend: int, divisor: int, surface: str = "
 _PLACE_SPAN = 10**13
 # A thousand matches the spelling group. A limb times a limb stays inside the span.
 _LIMB = THOUSAND_SPAN
-_LIMB_CAP = 13
+# One hundred ninety-five groups name a five-hundred-eighty-three-digit count.
+_LIMB_CAP = 195
+# The sixty-first composition is named. The next one stays open.
+_PELL_STEP_CAP = 61
 # SI metre. This many metres per second. It is not a fitted coefficient, and it is not K.
 _LIGHT_METRES = 299_792_458
-_SCALE_WORD = (
-    "",
-    THOUSAND_WORD,
+# The first nine powers of a thousand million keep the names already in use.
+_EARLY_ILLION = (
     MILLION_WORD,
     BILLION_WORD,
     TRILLION_WORD,
@@ -332,9 +336,105 @@ _SCALE_WORD = (
     "septillion",
     "octillion",
     "nonillion",
-    "decillion",
-    "undecillion",
 )
+# Units first. The flags say which letter the next piece can ask for.
+_ILLION_UNITS = (
+    ("", ""),
+    ("un", ""),
+    ("duo", ""),
+    ("tre", "s"),
+    ("quattuor", ""),
+    ("quin", ""),
+    ("se", "sx"),
+    ("septe", "mn"),
+    ("octo", ""),
+    ("nove", "mn"),
+)
+_ILLION_TENS = (
+    ("", ""),
+    ("deci", "n"),
+    ("viginti", "ms"),
+    ("triginta", "ns"),
+    ("quadraginta", "ns"),
+    ("quinquaginta", "ns"),
+    ("sexaginta", "n"),
+    ("septuaginta", "n"),
+    ("octoginta", "mx"),
+    ("nonaginta", ""),
+)
+_ILLION_HUNDREDS = (
+    ("", ""),
+    ("centi", "nx"),
+    ("ducenti", "n"),
+    ("trecenti", "ns"),
+    ("quadringenti", "ns"),
+    ("quingenti", "ns"),
+    ("sescenti", "n"),
+    ("septingenti", "n"),
+    ("octingenti", "mx"),
+    ("nongenti", ""),
+)
+
+
+def _join_illion_unit(stem: str, flags: str, markers: str) -> str:
+    """The unit stem plus the letter the next piece asks for.
+
+    tre takes s before s or x. se takes s before s and x before x.
+    septe and nove take m before n.
+    """
+    if not stem or not flags or not markers:
+        return stem
+    if "s" in flags and "x" not in flags:
+        if "s" in markers or "x" in markers:
+            return stem + "s"
+        return stem
+    if "x" in flags:
+        if "s" in markers:
+            return stem + "s"
+        if "x" in markers:
+            return stem + "x"
+        return stem
+    if "m" in markers:
+        return stem + "m"
+    if "n" in markers:
+        return stem + "n"
+    return stem
+
+
+def _illion(n: int) -> str | None:
+    """The short-scale name of 10^(3n+3). One is million.
+
+    Past nine hundred ninety-nine stays open. From ten upward the name is
+    the units, then the tens, then the hundreds. The final vowel drops,
+    and illion is added.
+    """
+    if n < 1 or n > 999:
+        return None
+    if n < 10:
+        return _EARLY_ILLION[n - 1]
+    hundreds, rest = divmod(n, 100)
+    tens, units = divmod(rest, 10)
+    unit_stem, unit_flags = _ILLION_UNITS[units]
+    ten_stem, ten_marks = _ILLION_TENS[tens]
+    hundred_stem, hundred_marks = _ILLION_HUNDREDS[hundreds]
+    if units:
+        marks = ten_marks if tens else hundred_marks
+        unit_stem = _join_illion_unit(unit_stem, unit_flags, marks)
+    raw = unit_stem + ten_stem + hundred_stem
+    if raw[-1:] in "aeiou":
+        raw = raw[:-1]
+    return raw + "illion"
+
+
+def _scale_name(index: int) -> str | None:
+    """The name of the 1000^index group. The units group is empty."""
+    if index < 0:
+        return None
+    if index == 0:
+        return ""
+    if index == 1:
+        return THOUSAND_WORD
+    return _illion(index - 1)
 
 
 def _whole_name(number: int, surface: str) -> str:
@@ -1119,7 +1219,7 @@ def _see(worst: list[float], gap: float) -> None:
 
 
 def _limb_split(number: int) -> tuple[int, ...] | None:
-    """Groups of a thousand, least first. More than thirteen groups stay open."""
+    """Groups of a thousand, least first. More than one hundred ninety-five groups stay open."""
     if number < 0:
         return None
     if number == 0:
@@ -1332,12 +1432,12 @@ def _wide_name(limbs: tuple[int, ...], surface: str) -> str:
         group = limbs[index]
         if group == 0:
             continue
-        if index >= len(_SCALE_WORD):
+        scale = _scale_name(index)
+        if scale is None:
             return "open"
         spelled = number_name(group)
         if spelled == "?":
             return "open"
-        scale = _SCALE_WORD[index]
         words.append(spelled if not scale else f"{spelled} {scale}")
     if not words:
         return _whole_name(0, surface)
@@ -3207,17 +3307,16 @@ def _compose_pell(
     return new_x, new_y
 
 
-def _pell_at_step(
+def _pell_through(
     lattice: Lattice, number: int, step: int, surface: str
-) -> tuple[int, int] | None:
-    """The least solution composed with itself. Step one is that solution."""
-    if number < 0 or step < 1 or step > 32:
+) -> list[tuple[int, int]] | None:
+    """Each composition from step one through this step. Step one is the least pair."""
+    if number < 0 or step < 1 or step > _PELL_STEP_CAP:
         return None
     base = _pell_solution(lattice, number, 1, surface)
     if base is None:
         return None
-    if step == 1:
-        return base
+    pairs = [base]
     x1, y1 = base
     x_count, y_count = base
     for _index in range(step - 1):
@@ -3227,7 +3326,18 @@ def _pell_at_step(
         if found is None:
             return None
         x_count, y_count = found
-    return x_count, y_count
+        pairs.append((x_count, y_count))
+    return pairs
+
+
+def _pell_at_step(
+    lattice: Lattice, number: int, step: int, surface: str
+) -> tuple[int, int] | None:
+    """The least solution composed with itself. Step one is that solution."""
+    found = _pell_through(lattice, number, step, surface)
+    if found is None:
+        return None
+    return found[-1]
 
 
 def _broad_name(lattice: Lattice, number: int, surface: str) -> str:
@@ -3246,8 +3356,8 @@ def ask_pell_step(
     """The pair made by composing the least solution with itself.
 
     Step one is the least pair. Each later pair is that solution composed
-    with the pair before it. A perfect square stays open. A pair past the
-    thousand groups stays open.
+    with the pair before it. A perfect square stays open. A step past
+    sixty-one stays open, and so does a pair past the thousand groups.
     """
     found = _pell_at_step(lattice, number, step, surface)
     if found is None:
