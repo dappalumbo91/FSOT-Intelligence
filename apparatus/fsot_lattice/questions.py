@@ -18,7 +18,10 @@ by the exact Lorentz factor when the two squares meet. The total minus
 the rest is the kinetic energy. Momentum is the mass times that speed,
 and the energy and the momentum meet on the square of mass times the speed
 of light. A leftover from that division names the reduced ratio, and the
-cleared squares still name that same square. A power repeats that product. The totient counts residues whose
+cleared squares still name that same square. When the deficit of those
+squares is not a square, the motion and the momentum name the square of
+the count, and the products that keep the deficit still name that same
+square of mass times the speed of light. A power repeats that product. The totient counts residues whose
 common measure is one, and the order is the least power that leaves one.
 A generator is an order that meets the totient. The least power that hits
 a leftover is the logarithm. A square leftover meets Euler's count on an
@@ -1743,6 +1746,16 @@ def _ratio_words(
     return f"{stem} {piece}"
 
 
+def _square_name(
+    lattice: Lattice, whole: int, numerator: int, denominator: int, surface: str
+) -> str:
+    """The square of a count. The fraction of that square stays in digits."""
+    text = _ratio_words(lattice, whole, numerator, denominator, surface)
+    if text == "open":
+        return "open"
+    return f"square {text}"
+
+
 def _rest_joules(
     lattice: Lattice, mass: int, surface: str
 ) -> tuple[tuple[int, ...], float] | None:
@@ -1925,15 +1938,19 @@ def ask_motion(
     """Joules of this mass at rise/run of the speed of light.
 
     A zero rise is the rest energy. A leftover names the reduced ratio.
-    The mass and the speed are not a stored pair.
+    When the deficit of the two squares is not a square, the square of
+    the joules is named. The mass and the speed are not a stored pair.
     """
     found = _motion_joules(lattice, mass, rise, run, surface)
     if found is not None:
         return _wide_name(found[0], surface)
     shared = _motion_share(lattice, mass, rise, run, surface)
-    if shared is None:
+    if shared is not None:
+        return _ratio_words(lattice, shared[0], shared[1], shared[2], surface)
+    squared = _motion_square(lattice, mass, rise, run, surface)
+    if squared is None:
         return "open"
-    return _ratio_words(lattice, shared[0], shared[1], shared[2], surface)
+    return _square_name(lattice, squared[0], squared[1], squared[2], surface)
 
 
 def _kinetic_joules(
@@ -2157,15 +2174,19 @@ def ask_momentum(
     """Momentum of this mass at rise/run of the speed of light.
 
     A zero rise is zero. A leftover names the same reduced ratio the
-    quotient reader keeps beside its remainder spelling.
+    quotient reader keeps beside its remainder spelling. When the deficit
+    of the two squares is not a square, the square of the momentum is named.
     """
     found = _momentum_count(lattice, mass, rise, run, surface)
     if found is not None:
         return _wide_name(found[0], surface)
     shared = _momentum_share(lattice, mass, rise, run, surface)
-    if shared is None:
+    if shared is not None:
+        return _ratio_words(lattice, shared[0], shared[1], shared[2], surface)
+    squared = _momentum_square(lattice, mass, rise, run, surface)
+    if squared is None:
         return "open"
-    return _ratio_words(lattice, shared[0], shared[1], shared[2], surface)
+    return _square_name(lattice, squared[0], squared[1], squared[2], surface)
 
 
 def _shared_square(
@@ -2368,6 +2389,288 @@ def _invariant_square(
     return goal[0], gap
 
 
+def _wider(gap: float, extra: float) -> float | None:
+    """The wider gap. A gap that meets the drop stays open."""
+    if extra >= DROP:
+        return None
+    return extra if extra > gap else gap
+
+
+def _speed_deficit(
+    lattice: Lattice, rise: int, run: int, surface: str
+) -> tuple[int, float] | None:
+    """Run squared minus rise squared, when that difference is not a square.
+
+    The speed stays strictly below light, and the run stays below one thousand.
+    """
+    if rise < 0 or run <= 0 or rise >= run or run >= _LIMB:
+        return None
+    rise_part = _times(lattice, rise, rise, surface)
+    run_part = _times(lattice, run, run, surface)
+    if rise_part is None or run_part is None:
+        return None
+    diff = _subtract_counts(
+        lattice, _limb_value(run_part[0]), _limb_value(rise_part[0]), surface
+    )
+    if diff is None:
+        return None
+    deficit = diff[0]
+    if deficit <= 0 or deficit != run * run - rise * rise:
+        return None
+    floor = _square_floor(lattice, deficit, surface)
+    if floor is None or floor[1] or floor[0] < 0:
+        return None
+    gap = rise_part[1]
+    widened = _wider(gap, run_part[1])
+    if widened is None:
+        return None
+    widened = _wider(widened, diff[1])
+    if widened is None:
+        return None
+    return deficit, widened
+
+
+def _motion_square(
+    lattice: Lattice, mass: int, rise: int, run: int, surface: str
+) -> tuple[int, int, int, float] | None:
+    """The square of the joules, as a reduced ratio over the deficit.
+
+    Rest energy times the run, squared, divides by the run squared minus
+    the rise squared. The speed-then-mass product names the same count.
+    """
+    if mass <= 0:
+        return None
+    found = _speed_deficit(lattice, rise, run, surface)
+    if found is None:
+        return None
+    deficit, gap = found
+    rest = _rest_joules(lattice, mass, surface)
+    square = _times(lattice, _LIGHT_METRES, _LIGHT_METRES, surface)
+    if rest is None or square is None:
+        return None
+    rest_count = _limb_value(rest[0])
+    square_count = _limb_value(square[0])
+    grown = _times(lattice, rest_count, run, surface)
+    grown_back = _times(lattice, run, rest_count, surface)
+    along = _times(lattice, square_count, run, surface)
+    if grown is None or grown_back is None or along is None or grown[0] != grown_back[0]:
+        return None
+    along_count = _limb_value(along[0])
+    with_mass = _times(lattice, along_count, mass, surface)
+    other_mass = _times(lattice, mass, along_count, surface)
+    if with_mass is None or other_mass is None or with_mass[0] != other_mass[0]:
+        return None
+    grown_count = _limb_value(grown[0])
+    mass_count = _limb_value(with_mass[0])
+    if grown_count != rest_count * run or mass_count != square_count * run * mass:
+        return None
+    if grown_count != mass_count:
+        return None
+    squared = _times(lattice, grown_count, grown_count, surface)
+    if squared is None or _limb_value(squared[0]) != grown_count * grown_count:
+        return None
+    ratio = _mixed_ratio(lattice, _limb_value(squared[0]), deficit, surface)
+    if ratio is None:
+        return None
+    for extra in (
+        rest[1],
+        square[1],
+        grown[1],
+        grown_back[1],
+        along[1],
+        with_mass[1],
+        other_mass[1],
+        squared[1],
+        ratio[3],
+    ):
+        widened = _wider(gap, extra)
+        if widened is None:
+            return None
+        gap = widened
+    return ratio[0], ratio[1], ratio[2], gap
+
+
+def _momentum_square(
+    lattice: Lattice, mass: int, rise: int, run: int, surface: str
+) -> tuple[int, int, int, float] | None:
+    """The square of the momentum, as a reduced ratio over the deficit.
+
+    Mass then rise then the speed, squared, divides by the run squared
+    minus the rise squared. The other product order names the same count.
+    """
+    if mass <= 0 or rise <= 0:
+        return None
+    found = _speed_deficit(lattice, rise, run, surface)
+    if found is None:
+        return None
+    deficit, gap = found
+    by_mass = _times(lattice, mass, rise, surface)
+    by_rise = _times(lattice, rise, mass, surface)
+    by_light = _times(lattice, _LIGHT_METRES, mass, surface)
+    by_mass_light = _times(lattice, mass, _LIGHT_METRES, surface)
+    if (
+        by_mass is None
+        or by_rise is None
+        or by_light is None
+        or by_mass_light is None
+        or by_mass[0] != by_rise[0]
+        or by_light[0] != by_mass_light[0]
+    ):
+        return None
+    first = _times(lattice, _limb_value(by_mass[0]), _LIGHT_METRES, surface)
+    second = _times(lattice, _limb_value(by_light[0]), rise, surface)
+    if first is None or second is None or first[0] != second[0]:
+        return None
+    dividend = _limb_value(first[0])
+    if dividend != mass * rise * _LIGHT_METRES:
+        return None
+    squared = _times(lattice, dividend, dividend, surface)
+    if squared is None or _limb_value(squared[0]) != dividend * dividend:
+        return None
+    ratio = _mixed_ratio(lattice, _limb_value(squared[0]), deficit, surface)
+    if ratio is None:
+        return None
+    for extra in (
+        by_mass[1],
+        by_rise[1],
+        by_light[1],
+        by_mass_light[1],
+        first[1],
+        second[1],
+        squared[1],
+        ratio[3],
+    ):
+        widened = _wider(gap, extra)
+        if widened is None:
+            return None
+        gap = widened
+    return ratio[0], ratio[1], ratio[2], gap
+
+
+def _deficit_balance(
+    lattice: Lattice, mass: int, rise: int, run: int, surface: str
+) -> tuple[tuple[int, ...], float] | None:
+    """(mass * c) squared when the Lorentz deficit is not a square.
+
+    The square of rest times the run, minus the square of mass times the
+    rise times the speed, times the speed squared, meets the goal times
+    the deficit times the speed squared.
+    """
+    if mass <= 0:
+        return None
+    found = _speed_deficit(lattice, rise, run, surface)
+    if found is None:
+        return None
+    deficit, gap = found
+    by_mass = _times(lattice, mass, _LIGHT_METRES, surface)
+    by_light = _times(lattice, _LIGHT_METRES, mass, surface)
+    if by_mass is None or by_light is None or by_mass[0] != by_light[0]:
+        return None
+    mc = _limb_value(by_mass[0])
+    if mc != mass * _LIGHT_METRES:
+        return None
+    rest = _rest_joules(lattice, mass, surface)
+    if rest is None:
+        return None
+    rest_count = _limb_value(rest[0])
+    goal = _times(lattice, mc, mc, surface)
+    if goal is None or _limb_value(goal[0]) != mc * mc:
+        return None
+    by_rest = _times(lattice, mass, rest_count, surface)
+    other_rest = _times(lattice, rest_count, mass, surface)
+    if (
+        by_rest is None
+        or other_rest is None
+        or by_rest[0] != goal[0]
+        or other_rest[0] != goal[0]
+    ):
+        return None
+    goal_count = _limb_value(goal[0])
+    if goal_count != mass * mass * _LIGHT_METRES * _LIGHT_METRES:
+        return None
+    along = _times(lattice, rest_count, run, surface)
+    along_back = _times(lattice, run, rest_count, surface)
+    if along is None or along_back is None or along[0] != along_back[0]:
+        return None
+    a_count = _limb_value(along[0])
+    if a_count != rest_count * run:
+        return None
+    a_square = _times(lattice, a_count, a_count, surface)
+    if a_square is None or _limb_value(a_square[0]) != a_count * a_count:
+        return None
+    bee = _times(lattice, mc, rise, surface)
+    bee_back = _times(lattice, rise, mc, surface)
+    if bee is None or bee_back is None or bee[0] != bee_back[0]:
+        return None
+    b_count = _limb_value(bee[0])
+    if b_count != mc * rise:
+        return None
+    b_square = _times(lattice, b_count, b_count, surface)
+    if b_square is None or _limb_value(b_square[0]) != b_count * b_count:
+        return None
+    c_square = _times(lattice, _LIGHT_METRES, _LIGHT_METRES, surface)
+    if c_square is None or _limb_value(c_square[0]) != _LIGHT_METRES * _LIGHT_METRES:
+        return None
+    c2 = _limb_value(c_square[0])
+    right = _times(lattice, _limb_value(b_square[0]), c2, surface)
+    right_back = _times(lattice, c2, _limb_value(b_square[0]), surface)
+    if right is None or right_back is None or right[0] != right_back[0]:
+        return None
+    rcount = _limb_value(right[0])
+    if rcount != _limb_value(b_square[0]) * c2:
+        return None
+    goal_d = _times(lattice, goal_count, deficit, surface)
+    goal_d_back = _times(lattice, deficit, goal_count, surface)
+    if goal_d is None or goal_d_back is None or goal_d[0] != goal_d_back[0]:
+        return None
+    if _limb_value(goal_d[0]) != goal_count * deficit:
+        return None
+    scaled = _times(lattice, _limb_value(goal_d[0]), c2, surface)
+    scaled_back = _times(lattice, c2, _limb_value(goal_d[0]), surface)
+    if scaled is None or scaled_back is None or scaled[0] != scaled_back[0]:
+        return None
+    scount = _limb_value(scaled[0])
+    if scount != _limb_value(goal_d[0]) * c2:
+        return None
+    a2 = _limb_value(a_square[0])
+    if a2 < rcount or a2 - rcount != scount:
+        return None
+    diff = _wide_subtract(lattice, a2, rcount, surface)
+    if diff is None or _limb_value(diff[0]) != scount:
+        return None
+    rebuilt = _wide_add(lattice, scount, rcount, surface)
+    if rebuilt is None or _limb_value(rebuilt[0]) != a2:
+        return None
+    for extra in (
+        by_mass[1],
+        by_light[1],
+        rest[1],
+        goal[1],
+        by_rest[1],
+        other_rest[1],
+        along[1],
+        along_back[1],
+        a_square[1],
+        bee[1],
+        bee_back[1],
+        b_square[1],
+        c_square[1],
+        right[1],
+        right_back[1],
+        goal_d[1],
+        goal_d_back[1],
+        scaled[1],
+        scaled_back[1],
+        diff[1],
+        rebuilt[1],
+    ):
+        widened = _wider(gap, extra)
+        if widened is None:
+            return None
+        gap = widened
+    return goal[0], gap
+
+
 def ask_balance(
     lattice: Lattice, mass: int, rise: int, run: int, surface: str = "digit"
 ) -> str:
@@ -2375,15 +2678,20 @@ def ask_balance(
 
     Energy over the speed of light, squared, minus the momentum squared,
     names this count when both are whole. When the momentum is a ratio,
-    the cleared squares still name this count.
+    the cleared squares still name this count. When the deficit of those
+    squares is not a square, the products that keep the deficit still
+    name this count.
     """
     found = _shared_square(lattice, mass, rise, run, surface)
     if found is not None:
         return _wide_name(found[0], surface)
     cleared = _invariant_square(lattice, mass, rise, run, surface)
-    if cleared is None:
+    if cleared is not None:
+        return _wide_name(cleared[0], surface)
+    deficit = _deficit_balance(lattice, mass, rise, run, surface)
+    if deficit is None:
         return "open"
-    return _wide_name(cleared[0], surface)
+    return _wide_name(deficit[0], surface)
 
 
 def _power(lattice: Lattice, base: int, exponent: int, surface: str) -> int | None:
