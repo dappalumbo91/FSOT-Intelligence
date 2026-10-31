@@ -41,6 +41,9 @@ difference back meets the larger square. Composing that pair with itself
 names each later solution. Seventy of those compositions stay inside
 two hundred twenty-three thousand-groups, and each group keeps its
 short-scale name.
+The opening two words of a question name its coarse type. A word seen
+fewer than five times shares one gauge. A question shorter than two
+words stays open.
 """
 
 from __future__ import annotations
@@ -50,6 +53,7 @@ from dataclasses import dataclass, field
 from fsot_lattice.apply import DROP
 from fsot_lattice.lattice import Lattice, content_offset
 from fsot_lattice.layouts import LayoutScore
+from fsot_lattice.speech import SpeechScore, name_opening, question_words
 from fsot_lattice.tasks import (
     ACQUIRED_NOUNS,
     CONTENT_WORDS,
@@ -4254,3 +4258,24 @@ def ask_layout(lattice: Lattice, score: LayoutScore, name: str, home: str) -> st
         return "open"
     gap = lattice.consensus_quantity(names[name], homes[home], lattice.routed_sign("-"))
     return lattice.remainder_answer(gap)
+
+
+def ask_speech(lattice: Lattice, score: SpeechScore, question: str) -> str:
+    """The coarse type of the opening two words.
+
+    A question shorter than two words stays open. A rare word shares the
+    other gauge. A nearest home outside the drop stays open.
+    """
+    if not score.landed:
+        return "open"
+    tokens = question_words(question)
+    if len(tokens) < 2:
+        return "open"
+    label, _gap = name_opening(
+        lattice,
+        dict(score.word_gauge),
+        score.home_gauge,
+        tokens[0],
+        tokens[1],
+    )
+    return label

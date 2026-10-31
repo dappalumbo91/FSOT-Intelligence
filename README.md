@@ -93,8 +93,13 @@ mist still holds animal after the three-clock fact read has let it go.
 That paragraph is measured locally. The resting fact stays the first
 teaching, so a wolf is an animal. A second sense of the same name
 belongs beside that fact, in the situation that names it. The
-published package remains the 2026-10-20 report. No date has been
-measured for matching a public language model.
+promoted gauges remain the 2026-10-20 report. The opening two words
+of a held-out question name its coarse type. On the CogComp questions
+that type is right on 251 of 500. The teaching majority, ENTY, is
+right on 94 of those 500. One hundred six word gauges are kept, and
+every nearest home on those 500 sat inside the drop. A question
+shorter than two words stays open. No date has been measured for
+matching a public language model.
 
 1. **Quantities people spell.** Ten million, a hundred million, a billion,
    ten billion, a hundred billion, and a trillion. Each rung is the ten-step
