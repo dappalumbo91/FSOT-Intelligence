@@ -37,8 +37,8 @@ A whole square root repeats. One period of that fraction names the Pell
 pair: the first square is one above the count times the second square.
 A square past the place span is the thousand product, and adding the
 difference back meets the larger square. Composing that pair with itself
-names each later solution. Sixty-nine of those compositions stay inside
-two hundred twenty thousand-groups, and each group keeps its
+names each later solution. Seventy of those compositions stay inside
+two hundred twenty-three thousand-groups, and each group keeps its
 short-scale name.
 """
 
@@ -323,10 +323,10 @@ def ask_quotient(lattice: Lattice, dividend: int, divisor: int, surface: str = "
 _PLACE_SPAN = 10**13
 # A thousand matches the spelling group. A limb times a limb stays inside the span.
 _LIMB = THOUSAND_SPAN
-# Two hundred twenty groups name a six-hundred-fifty-nine-digit count.
-_LIMB_CAP = 220
-# The sixty-ninth composition is named. The next one stays open.
-_PELL_STEP_CAP = 69
+# Two hundred twenty-three groups name a six-hundred-sixty-nine-digit count.
+_LIMB_CAP = 223
+# The seventieth composition is named. The next one stays open.
+_PELL_STEP_CAP = 70
 # SI metre. This many metres per second. It is not a fitted coefficient, and it is not K.
 _LIGHT_METRES = 299_792_458
 # The first nine powers of a thousand million keep the names already in use.
@@ -1223,7 +1223,7 @@ def _see(worst: list[float], gap: float) -> None:
 
 
 def _limb_split(number: int) -> tuple[int, ...] | None:
-    """Groups of a thousand, least first. More than two hundred twenty groups stay open."""
+    """Groups of a thousand, least first. More than two hundred twenty-three groups stay open."""
     if number < 0:
         return None
     if number == 0:
@@ -4051,7 +4051,7 @@ def ask_pell_step(
 
     Step one is the least pair. Each later pair is that solution composed
     with the pair before it. A perfect square stays open. A step past
-    sixty-nine stays open, and so does a pair past the thousand groups.
+    seventy stays open, and so does a pair past the thousand groups.
     """
     found = _pell_at_step(lattice, number, step, surface)
     if found is None:
