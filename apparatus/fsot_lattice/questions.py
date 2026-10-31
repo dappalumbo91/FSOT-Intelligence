@@ -20,8 +20,9 @@ and the energy and the momentum meet on the square of mass times the speed
 of light. A leftover from that division names the reduced ratio, and the
 cleared squares still name that same square. When the deficit of those
 squares is not a square, the motion and the momentum name the square of
-the count, and the products that keep the deficit still name that same
-square of mass times the speed of light. A power repeats that product. The totient counts residues whose
+the count, the kinetic read names the difference of the total square and
+the rest square, and the products that keep the deficit still name that
+same square of mass times the speed of light. A power repeats that product. The totient counts residues whose
 common measure is one, and the order is the least power that leaves one.
 A generator is an order that meets the totient. The least power that hits
 a leftover is the logarithm. A square leftover meets Euler's count on an
@@ -1756,6 +1757,16 @@ def _square_name(
     return f"square {text}"
 
 
+def _difference_name(
+    lattice: Lattice, whole: int, numerator: int, denominator: int, surface: str
+) -> str:
+    """The difference of two squares. The fraction stays in digits."""
+    text = _ratio_words(lattice, whole, numerator, denominator, surface)
+    if text == "open":
+        return "open"
+    return f"square difference {text}"
+
+
 def _rest_joules(
     lattice: Lattice, mass: int, surface: str
 ) -> tuple[tuple[int, ...], float] | None:
@@ -2051,21 +2062,107 @@ def _kinetic_share(
     return direct[0], direct[1], direct[2], gap
 
 
+def _kinetic_difference(
+    lattice: Lattice, mass: int, rise: int, run: int, surface: str
+) -> tuple[int, int, int, float] | None:
+    """Total-energy square minus rest-energy square, over the deficit.
+
+    Rest squared times the rise squared divides by the deficit. The square
+    of rest times the run, minus rest squared times the deficit, meets that
+    same dividend. The joule count stays irrational. This difference is the
+    kinetic energy times the total energy plus the rest.
+    """
+    if mass <= 0 or rise <= 0:
+        return None
+    found = _speed_deficit(lattice, rise, run, surface)
+    if found is None:
+        return None
+    deficit, gap = found
+    rest = _rest_joules(lattice, mass, surface)
+    if rest is None:
+        return None
+    rest_count = _limb_value(rest[0])
+    rest_square = _times(lattice, rest_count, rest_count, surface)
+    if rest_square is None or _limb_value(rest_square[0]) != rest_count * rest_count:
+        return None
+    rise_part = _times(lattice, rise, rise, surface)
+    if rise_part is None or _limb_value(rise_part[0]) != rise * rise:
+        return None
+    rest_squared = _limb_value(rest_square[0])
+    rise_squared = _limb_value(rise_part[0])
+    forward = _times(lattice, rest_squared, rise_squared, surface)
+    backward = _times(lattice, rise_squared, rest_squared, surface)
+    if forward is None or backward is None or forward[0] != backward[0]:
+        return None
+    dividend = _limb_value(forward[0])
+    if dividend != rest_count * rest_count * rise * rise:
+        return None
+    grown = _times(lattice, rest_count, run, surface)
+    grown_back = _times(lattice, run, rest_count, surface)
+    if grown is None or grown_back is None or grown[0] != grown_back[0]:
+        return None
+    grown_count = _limb_value(grown[0])
+    if grown_count != rest_count * run:
+        return None
+    grown_square = _times(lattice, grown_count, grown_count, surface)
+    if grown_square is None or _limb_value(grown_square[0]) != grown_count * grown_count:
+        return None
+    scaled = _times(lattice, rest_squared, deficit, surface)
+    scaled_back = _times(lattice, deficit, rest_squared, surface)
+    if scaled is None or scaled_back is None or scaled[0] != scaled_back[0]:
+        return None
+    scaled_count = _limb_value(scaled[0])
+    if scaled_count != rest_squared * deficit:
+        return None
+    if _limb_value(grown_square[0]) - scaled_count != dividend:
+        return None
+    diff = _wide_subtract(lattice, _limb_value(grown_square[0]), scaled_count, surface)
+    if diff is None or _limb_value(diff[0]) != dividend:
+        return None
+    ratio = _mixed_ratio(lattice, dividend, deficit, surface)
+    if ratio is None:
+        return None
+    for extra in (
+        rest[1],
+        rest_square[1],
+        rise_part[1],
+        forward[1],
+        backward[1],
+        grown[1],
+        grown_back[1],
+        grown_square[1],
+        scaled[1],
+        scaled_back[1],
+        diff[1],
+        ratio[3],
+    ):
+        widened = _wider(gap, extra)
+        if widened is None:
+            return None
+        gap = widened
+    return ratio[0], ratio[1], ratio[2], gap
+
+
 def ask_kinetic(
     lattice: Lattice, mass: int, rise: int, run: int, surface: str = "digit"
 ) -> str:
     """Kinetic joules of this mass at rise/run of the speed of light.
 
-    A zero rise is zero. A leftover names the reduced ratio.
-    The total and the rest are not stored.
+    A zero rise is zero. A leftover names the reduced ratio. When the
+    deficit of the two squares is not a square, the joule count stays
+    irrational and the difference of the total square and the rest square
+    is named. The total and the rest are not stored.
     """
     found = _kinetic_joules(lattice, mass, rise, run, surface)
     if found is not None:
         return _wide_name(found[0], surface)
     shared = _kinetic_share(lattice, mass, rise, run, surface)
-    if shared is None:
+    if shared is not None:
+        return _ratio_words(lattice, shared[0], shared[1], shared[2], surface)
+    squared = _kinetic_difference(lattice, mass, rise, run, surface)
+    if squared is None:
         return "open"
-    return _ratio_words(lattice, shared[0], shared[1], shared[2], surface)
+    return _difference_name(lattice, squared[0], squared[1], squared[2], surface)
 
 
 def _momentum_count(
