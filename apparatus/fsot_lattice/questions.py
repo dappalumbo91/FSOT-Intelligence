@@ -43,7 +43,8 @@ two hundred twenty-three thousand-groups, and each group keeps its
 short-scale name.
 The opening two words of a question name its coarse type. A word seen
 fewer than five times shares one gauge. A question shorter than two
-words stays open.
+words stays open. A question that states its amounts answers with the
+added amounts minus the subtracted amounts.
 """
 
 from __future__ import annotations
@@ -53,6 +54,7 @@ from dataclasses import dataclass, field
 from fsot_lattice.apply import DROP
 from fsot_lattice.lattice import Lattice, content_offset
 from fsot_lattice.layouts import LayoutScore
+from fsot_lattice.answers import AnswerScore, format_amount, predict_terms
 from fsot_lattice.speech import SpeechScore, name_opening, question_words
 from fsot_lattice.tasks import (
     ACQUIRED_NOUNS,
@@ -4279,3 +4281,49 @@ def ask_speech(lattice: Lattice, score: SpeechScore, question: str) -> str:
         tokens[1],
     )
     return label
+
+
+def _named_total(lattice: Lattice, values: list[int]) -> int | None:
+    """The sum of these counts. The place reader has to name it."""
+    if not values:
+        return 0
+    total = values[0]
+    if len(values) == 1:
+        if _held_integer(lattice, total, "digit") != total:
+            return None
+        return total
+    for value in values[1:]:
+        found = _gauge_sum(lattice, total, value, "digit")
+        if found is None:
+            return None
+        total = found
+    return total
+
+
+def ask_answer(lattice: Lattice, score: AnswerScore, question: str) -> str:
+    """The amount the question asks for.
+
+    Each stated amount is kept, added, or subtracted. The lattice names
+    the added amounts minus the subtracted amounts. A question that does
+    not state two amounts stays open.
+    """
+    found = predict_terms(lattice, score, question)
+    if found is None:
+        return "open"
+    added, subtracted, scale, _gap = found
+    left = _named_total(lattice, added)
+    if left is None:
+        return "open"
+    if subtracted:
+        right = _named_total(lattice, subtracted)
+        if right is None or right > left:
+            return "open"
+        named = ask_difference(lattice, left, right, "digit")
+        if named != str(left - right):
+            return "open"
+        total = left - right
+    else:
+        total = left
+    if total != sum(added) - sum(subtracted):
+        return "open"
+    return format_amount(total, scale)

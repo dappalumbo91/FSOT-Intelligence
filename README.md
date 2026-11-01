@@ -98,8 +98,16 @@ of a held-out question name its coarse type. On the CogComp questions
 that type is right on 251 of 500. The teaching majority, ENTY, is
 right on 94 of those 500. One hundred six word gauges are kept, and
 every nearest home on those 500 sat inside the drop. A question
-shorter than two words stays open. No date has been measured for
-matching a public language model.
+shorter than two words stays open. A question that states its amounts
+answers with the added amounts minus the subtracted amounts. On the
+single-equation problems that are not already in the AddSub file, and
+whose equation rebuilds the recorded solution, that amount is right
+on 22 of 32. The sum of every stated amount is right on 17 of those
+32. One hundred eighty-seven word gauges are kept, and three of the
+32 sat outside the drop. The widest gap among the others was
+2.092200e-01, inside the drop. A question that does not state two
+amounts stays open. No date has been measured for matching a public
+language model.
 
 1. **Quantities people spell.** Ten million, a hundred million, a billion,
    ten billion, a hundred billion, and a trillion. Each rung is the ten-step
